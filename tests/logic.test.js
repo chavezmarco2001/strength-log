@@ -114,7 +114,7 @@ test('every translation key used in the code exists in English and Spanish', () 
   // keys built dynamically
   for (const p of ['nav_workout', 'nav_history', 'nav_routines', 'nav_more', 'tab_track', 'tab_history', 'tab_graph']) used.add(p);
   for (const k of ['mood', 'motivation', 'satisfaction']) ['q_', 'low_', 'high_'].forEach(p => used.add(p + k));
-  for (const r of ['noExercise', 'badDate', 'cardio', 'noReps', 'badReps', 'badWeight', 'negativeWeight']) used.add('skip_' + r);
+  for (const r of ['noExercise', 'badDate', 'cardio', 'noReps', 'badReps', 'badWeight', 'negativeWeight', 'notComplete']) used.add('skip_' + r);
   const missing = [...used].filter(k => !dict.en[k] || !dict.es[k]);
   assert.deepEqual(missing, []);
   const extraEs = Object.keys(dict.es).filter(k => !dict.en[k]);

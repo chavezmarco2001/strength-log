@@ -223,15 +223,18 @@ export async function exportCheckinsCSV() {
 
 // ---------- FitNotes import ----------
 /**
- * Writes the rows produced by analyzeFitNotes(). Exercises are matched by name
- * (ignoring case, accents and extra spaces) against the library and each other.
- * Sets already present (same day, exercise, weight, reps) are skipped, so importing
- * the same file twice does not duplicate anything.
+ * Writes what analyzeFitNotes() (CSV) or analyzeFitNotesBackup() (.fitnotes) produced.
+ * Exercises are matched by name (ignoring case, accents, hyphens and extra spaces)
+ * against the library and each other. Sets already present (same day, exercise,
+ * weight, reps) are skipped, so importing the same file twice duplicates nothing.
+ * Options: removeUnusedBuiltins (drop built-in exercises never used), restSeconds (new default rest).
  */
-export async function importFitNotes(an) {
+export async function importFitNotes(an, { removeUnusedBuiltins = false, restSeconds } = {}) {
   const report = {
-    at: Date.now(), total: an.total, imported: 0, duplicates: 0,
+    at: Date.now(), source: an.source || 'csv', total: an.total, imported: 0, duplicates: 0,
     createdExercises: [], matchedExercises: [], mergedNames: [], createdCategories: [],
+    createdRoutines: [], existingRoutines: [], builtinsRemoved: 0,
+    nonWeightExercises: an.nonWeightExercises || 0, comments: an.comments || 0,
     skippedCount: an.skipped.length, skipped: an.skipped.slice(0, 500), from: null, to: null,
     dateOrderAssumed: !!an.dateOrderAssumed,
   };
@@ -240,37 +243,45 @@ export async function importFitNotes(an) {
   const exByNorm = new Map();
   for (const e of exercises) { exByNorm.set(norm(e.name), e); if (e.nameEs) exByNorm.set(norm(e.nameEs), e); }
 
-  const existing = await db.getAll('sets');
   const dup = new Map();
-  for (const s of existing) { const k = `${s.date}|${s.exerciseId}|${wkey(s.weight)}|${s.reps}`; dup.set(k, (dup.get(k) || 0) + 1); }
+  for (const s of await db.getAll('sets')) { const k = `${s.date}|${s.exerciseId}|${wkey(s.weight)}|${s.reps}`; dup.set(k, (dup.get(k) || 0) + 1); }
 
   const spellings = new Map(); // norm → Set(original names)
   const created = new Set(), matched = new Set();
-  const newCats = [], newEx = [], newSets = [];
+  const newCats = [], newEx = [], newSets = [], newRoutines = [];
   let other = null;
-  let order = 0;
 
+  function category(name, color) {
+    let cat = name ? catByNorm.get(norm(name)) : null;
+    if (!cat && name) {
+      cat = { id: uid(), name, color: color || PALETTE[(categories.length + newCats.length) % PALETTE.length], order: 100 + newCats.length };
+      newCats.push(cat); catByNorm.set(norm(name), cat); report.createdCategories.push(name);
+    }
+    if (!cat) {
+      other ??= catByNorm.get('other') || catByNorm.get('otros');
+      if (!other) { other = { id: uid(), name: 'Other', nameEs: 'Otros', color: '#8b949e', order: 999 }; newCats.push(other); catByNorm.set('other', other); report.createdCategories.push('Other'); }
+      cat = other;
+    }
+    return cat;
+  }
+  function exercise(name, catName, color) {
+    const n = norm(name);
+    let ex = exByNorm.get(n);
+    if (!ex) {
+      ex = { id: uid(), name, categoryId: category(catName, color).id };
+      newEx.push(ex); exByNorm.set(n, ex); created.add(n);
+    } else if (!created.has(n)) matched.add(n);
+    touched.add(ex.id);
+    return ex;
+  }
+  const touched = new Set(); // every exercise the file mentions (sets, library, routines)
+
+  let order = 0;
   for (const r of an.sets) {
     const n = norm(r.exercise);
     if (!spellings.has(n)) spellings.set(n, new Set());
     spellings.get(n).add(r.exercise);
-
-    let ex = exByNorm.get(n);
-    if (!ex) {
-      let cat = r.category ? catByNorm.get(norm(r.category)) : null;
-      if (!cat && r.category) {
-        cat = { id: uid(), name: r.category, color: PALETTE[(categories.length + newCats.length) % PALETTE.length], order: 100 + newCats.length };
-        newCats.push(cat); catByNorm.set(norm(r.category), cat); report.createdCategories.push(r.category);
-      }
-      if (!cat) {
-        other ??= catByNorm.get('other') || catByNorm.get('otros');
-        if (!other) { other = { id: uid(), name: 'Other', nameEs: 'Otros', color: '#8b949e', order: 999 }; newCats.push(other); catByNorm.set('other', other); report.createdCategories.push('Other'); }
-        cat = other;
-      }
-      ex = { id: uid(), name: r.exercise, categoryId: cat.id };
-      newEx.push(ex); exByNorm.set(n, ex); created.add(n);
-    } else if (!created.has(n)) matched.add(n);
-
+    const ex = exercise(r.exercise, r.category, r.categoryColor);
     const k = `${r.date}|${ex.id}|${wkey(r.weight)}|${r.reps}`;
     const left = dup.get(k) || 0;
     if (left > 0) { dup.set(k, left - 1); report.duplicates++; continue; }
@@ -280,11 +291,21 @@ export async function importFitNotes(an) {
     if (!report.from || r.date < report.from) report.from = r.date;
     if (!report.to || r.date > report.to) report.to = r.date;
   }
+  for (const l of an.library || []) exercise(l.name, l.category, l.color);
 
-  await db.transact(['categories', 'exercises', 'sets'], s => {
+  const routineNames = new Set(routines.map(r => norm(r.name)));
+  for (const r of an.routines || []) {
+    if (routineNames.has(norm(r.name))) { report.existingRoutines.push(r.name); continue; }
+    routineNames.add(norm(r.name));
+    newRoutines.push({ id: uid(), name: r.name, items: [...new Set(r.exercises.map(e => exercise(e.name, e.category, e.color).id))] });
+    report.createdRoutines.push(r.name);
+  }
+
+  await db.transact(['categories', 'exercises', 'sets', 'routines'], s => {
     newCats.forEach(c => s.categories.put(c));
     newEx.forEach(e => s.exercises.put(e));
     newSets.forEach(x => s.sets.put(x));
+    newRoutines.forEach(x => s.routines.put(x));
   });
   report.imported = newSets.length;
   report.createdExercises = newEx.map(e => e.name).sort();
@@ -292,6 +313,18 @@ export async function importFitNotes(an) {
   report.mergedNames = [...spellings.values()].filter(v => v.size > 1).map(v => [...v]);
   if (newSets.length) anySets = true;
   await reload();
+  if (removeUnusedBuiltins) report.builtinsRemoved = await removeUnusedBuiltinExercises(touched);
+  if (restSeconds > 0) { await setSetting('rest', restSeconds); report.restSeconds = restSeconds; }
   await setSetting('lastImport', report);
   return report;
+}
+
+/** Deletes built-in exercises (ids "x-…") that have no sets, are in no routine and are not in `keep`. */
+export async function removeUnusedBuiltinExercises(keep = new Set()) {
+  const used = new Set([...keep, ...(await db.getAll('sets')).map(s => s.exerciseId)]);
+  routines.forEach(r => r.items.forEach(i => used.add(i)));
+  const victims = exercises.filter(e => e.id.startsWith('x-') && !used.has(e.id));
+  if (victims.length) await db.transact(['exercises'], s => victims.forEach(e => s.exercises.delete(e.id)));
+  await reload();
+  return victims.length;
 }

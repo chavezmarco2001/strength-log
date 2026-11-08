@@ -23,10 +23,13 @@ Los datos viven **solo en tu celular**. Si borras los datos de Chrome, desinstal
 
 ## Importar desde FitNotes
 
-1. En FitNotes, exporta tu historial como CSV (Ajustes › exportar hoja de cálculo).
-2. Pasa el archivo al celular donde está la app.
-3. En la app: **Más › Importar CSV de FitNotes…**
-4. Lee el resumen y confirma. Al final aparece un informe con:
+1. En FitNotes, haz un **respaldo** (archivo `.fitnotes`). También sirve un CSV exportado, pero el respaldo trae más: biblioteca de ejercicios y rutinas.
+2. En la app: **Más › Importar desde FitNotes…** y elige el archivo.
+3. Revisa las opciones:
+   - incluir las series que FitNotes no marcó como hechas (apagado por defecto),
+   - quitar los ejercicios incluidos que nunca usaste, para que la biblioteca quede como la de FitNotes,
+   - usar tu tiempo de descanso de FitNotes.
+4. Confirma. Al final aparece un informe con:
    - las filas que no se pudieron leer (número de línea y motivo),
    - los nombres que se unieron porque eran el mismo con distinta escritura,
    - los ejercicios que se unieron a la biblioteca y los que se crearon.

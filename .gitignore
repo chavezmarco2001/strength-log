@@ -3,3 +3,5 @@
 !tests/fixtures/*.csv
 *-backup-*.json
 node_modules/
+*.fitnotes
+tests/private/

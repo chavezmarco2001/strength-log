@@ -1,13 +1,14 @@
 // "More" tab: backup & import, progress pages, settings. Plus the import report.
-import { h, icon, topbar, seg, toggleRow, chooser, confirmDialog, toast, applyTheme } from '../ui.js';
+import { h, icon, topbar, seg, toggleRow, chooser, confirmDialog, toast, applyTheme, sheet } from '../ui.js';
 import * as data from '../data.js';
 import { t, setLang, fmtLong, fmtRest, fmtAgo, fmtNum } from '../i18n.js';
 import { toISODate, norm, REST_OPTIONS, STEP_OPTIONS } from '../util.js';
-import { analyzeFitNotes } from '../fitnotes.js';
+import { analyzeFitNotes, analyzeFitNotesBackup } from '../fitnotes.js';
+import { isSQLite } from '../sqlite.js';
 import { saveFile, canShareFiles } from '../files.js';
 import { testAlarm } from '../timer.js';
 
-export const APP_VERSION = '1.0.1';
+export const APP_VERSION = '1.1.0';
 
 export async function render(_, ctx) {
   const s = data.settings;
@@ -113,45 +114,95 @@ async function restore(file, ctx) {
 
 async function importCSV(file, ctx) {
   if (!file) return;
-  const sig = String.fromCharCode(...new Uint8Array(await file.slice(0, 16).arrayBuffer()));
-  if (sig.startsWith('SQLite format 3') || /\.fitnotes$/i.test(file.name)) return confirmDialog(t('csvIsFitnotesBackup', { name: file.name }), { cancel: false });
-  if (sig.startsWith('PK')) return confirmDialog(t('csvIsZip', { name: file.name }), { cancel: false });
-  if (/\.json$/i.test(file.name)) return confirmDialog(t('csvIsJson', { name: file.name }), { cancel: false });
-  const an = analyzeFitNotes(await file.text());
-  if (an.error) {
-    await confirmDialog(an.error === 'columns' ? t('csvBadColumns', { cols: an.columns.join(', ') || '—' }) : t('csvEmpty'), { cancel: false });
-    return;
+  const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+  const say = key => confirmDialog(t(key, { name: file.name }), { cancel: false });
+  let an;
+  if (isSQLite(head)) {
+    // FitNotes backup (.fitnotes) — read the database directly
+    try { an = analyzeFitNotesBackup(await file.arrayBuffer()); } catch (e) { console.error(e); return say('backupUnreadable'); }
+    if (an.error) return say('notFitnotesDb');
+  } else {
+    if (head[0] === 0x50 && head[1] === 0x4b) return say('csvIsZip');
+    if (/\.json$/i.test(file.name)) return say('csvIsJson');
+    an = analyzeFitNotes(await file.text());
+    if (an.error) return confirmDialog(an.error === 'columns' ? t('csvBadColumns', { cols: an.columns.join(', ') || '—' }) : t('csvEmpty'), { cancel: false });
   }
-  const exCount = new Set(an.sets.map(s => norm(s.exercise))).size;
-  const dates = an.sets.map(s => s.date).sort();
-  let msg = t('csvSummary', { sets: an.sets.length, ex: exCount, from: dates[0] ? fmtLong(dates[0]) : '–', to: dates.length ? fmtLong(dates.at(-1)) : '–' });
-  if (an.skipped.length) msg += '\n\n' + t('csvSkippedWarn', { n: an.skipped.length });
-  if (an.dateOrderAssumed) msg += '\n\n' + t('csvDateAssumed');
-  if (an.unit === 'lb') msg += '\n\n' + t('csvLbs');
-  if (!(await confirmDialog(msg, { ok: t('import') }))) return;
-  await data.importFitNotes(an);
+  const opts = await importOptions(an);
+  if (!opts) return;
+  const incomplete = an.incomplete || [];
+  const final = opts.includeIncomplete
+    ? { ...an, sets: [...an.sets, ...incomplete].sort((a, b) => a.order - b.order) }
+    : { ...an, skipped: [...an.skipped, ...incomplete.map(s => ({ line: s.line, reason: 'notComplete', raw: s.raw }))] };
+  toast(t('importing'), { ms: 1500 });
+  await data.importFitNotes(final, { removeUnusedBuiltins: opts.removeBuiltins, restSeconds: opts.useRest ? an.restSeconds : undefined });
   ctx.go('/import-report');
+}
+
+/** Summary + choices before importing. Resolves with the options, or null if cancelled. */
+function importOptions(an) {
+  const isBackup = an.source === 'backup';
+  const incomplete = an.incomplete || [];
+  const restDiffers = !!an.restSeconds && an.restSeconds !== data.settings.rest;
+  const opts = { includeIncomplete: false, removeBuiltins: isBackup, useRest: restDiffers };
+  return sheet(close => {
+    const box = h('div', { class: 'stack' });
+    const draw = () => {
+      const sets = opts.includeIncomplete ? [...an.sets, ...incomplete] : an.sets;
+      const dates = sets.map(s => s.date).sort();
+      const lines = [t('csvSummary', {
+        sets: sets.length, ex: new Set(sets.map(s => norm(s.exercise))).size,
+        from: dates[0] ? fmtLong(dates[0]) : '–', to: dates.length ? fmtLong(dates.at(-1)) : '–',
+      })];
+      if (isBackup) lines.push(t('backupExtras', { lib: an.library.length, routines: an.routines.length }));
+      if (an.skipped.length) lines.push(t('csvSkippedWarn', { n: an.skipped.length }));
+      if (an.dateOrderAssumed) lines.push(t('csvDateAssumed'));
+      if (an.unit === 'lb' && !isBackup) lines.push(t('csvLbs'));
+      box.replaceChildren(
+        h('h3', { class: 'sheet-title' }, t('importFromFitNotes')),
+        h('p', { class: 'msg' }, lines.join('\n\n')),
+        h('div', { class: 'list' },
+          incomplete.length > 0 && toggleRow(t('includeIncomplete', { n: incomplete.length }), opts.includeIncomplete, v => { opts.includeIncomplete = v; draw(); }, t('includeIncompleteSub')),
+          toggleRow(t('removeBuiltins'), opts.removeBuiltins, v => { opts.removeBuiltins = v; draw(); }, t('removeBuiltinsSub')),
+          restDiffers && toggleRow(t('useFitnotesRest', { v: fmtRest(an.restSeconds) }), opts.useRest, v => { opts.useRest = v; draw(); }, t('useFitnotesRestSub', { v: fmtRest(data.settings.rest) }))),
+        h('div', { class: 'btn-row' },
+          h('button', { class: 'btn big', onclick: () => close(null) }, t('cancel')),
+          h('button', { class: 'btn big primary', onclick: () => close({ ...opts }) }, t('import'))));
+    };
+    draw();
+    return box;
+  }).then(v => v ?? null);
 }
 
 export async function renderReport(_, ctx) {
   const r = data.settings.lastImport;
   const bar = topbar({ title: t('importReport'), back: () => ctx.back('/more') });
   if (!r) return h('div', { class: 'screen' }, bar, h('div', { class: 'content empty' }, t('noImport')));
+  const isBackup = r.source === 'backup';
   const stat = (label, value) => h('div', { class: 'rec-row' }, h('span', { class: 'muted' }, label), h('span', { class: 'rec-val' }, value));
-  const details = (title, items, render = x => x) => items.length > 0 && h('details', { class: 'card' },
+  const details = (title, items, render = x => x) => items?.length > 0 && h('details', { class: 'card' },
     h('summary', {}, `${title} (${items.length})`),
     h('ul', { class: 'plain' }, items.map(x => h('li', {}, render(x)))));
+  const notes = [
+    r.nonWeightExercises > 0 && t('nonWeightNotImported', { n: r.nonWeightExercises }),
+    r.comments > 0 && t('commentsNotImported', { n: r.comments }),
+  ].filter(Boolean);
   return h('div', { class: 'screen' }, bar,
     h('div', { class: 'content' },
       h('div', { class: 'card' },
-        stat(t('rowsRead'), r.total),
+        stat(t(isBackup ? 'setsInFile' : 'rowsRead'), r.total),
         stat(t('setsImported'), r.imported),
         stat(t('duplicatesSkipped'), r.duplicates),
-        stat(t('rowsNotRead'), r.skippedCount),
-        r.from && stat(t('dateRange'), `${fmtLong(r.from)} – ${fmtLong(r.to)}`)),
+        stat(t(isBackup ? 'setsNotImported' : 'rowsNotRead'), r.skippedCount),
+        r.from && stat(t('dateRange'), `${fmtLong(r.from)} – ${fmtLong(r.to)}`),
+        r.createdRoutines?.length > 0 && stat(t('routinesCreated'), r.createdRoutines.length),
+        r.builtinsRemoved > 0 && stat(t('builtinsRemoved'), r.builtinsRemoved),
+        r.restSeconds && stat(t('defaultRest'), fmtRest(r.restSeconds))),
       r.dateOrderAssumed && h('div', { class: 'banner warn' }, t('csvDateAssumed')),
-      details(t('rowsNotRead'), r.skipped, x => h('span', {}, h('b', {}, t('line', { n: x.line })), ' — ', t('skip_' + x.reason), h('div', { class: 'muted small mono' }, x.raw))),
+      notes.length > 0 && h('p', { class: 'muted small' }, notes.join(' ')),
+      details(t(isBackup ? 'setsNotImported' : 'rowsNotRead'), r.skipped, x => h('span', {}, h('b', {}, t(isBackup ? 'setNo' : 'line', { n: x.line })), ' — ', t('skip_' + x.reason), h('div', { class: 'muted small mono' }, x.raw))),
       r.skippedCount > r.skipped.length && h('p', { class: 'muted small' }, t('moreRowsNotShown', { n: r.skippedCount - r.skipped.length })),
+      details(t('routinesCreated'), r.createdRoutines),
+      details(t('routinesExisting'), r.existingRoutines),
       details(t('mergedSpellings'), r.mergedNames, x => x.join('  =  ')),
       details(t('matchedExercises'), r.matchedExercises),
       details(t('createdExercises'), r.createdExercises),
