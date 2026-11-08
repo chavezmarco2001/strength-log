@@ -1,0 +1,11 @@
+{
+  "name": "strength-log",
+  "private": true,
+  "type": "module",
+  "description": "Personal strength training log (PWA). No build step: the files are served as-is.",
+  "scripts": {
+    "dev": "node tools/serve.js",
+    "test": "node --test \"tests/*.test.js\"",
+    "icons": "node tools/make-icons.js"
+  }
+}

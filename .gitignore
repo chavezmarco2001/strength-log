@@ -1,0 +1,5 @@
+# Personal workout data must never be published with the app
+*.csv
+!tests/fixtures/*.csv
+*-backup-*.json
+node_modules/
