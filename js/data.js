@@ -319,6 +319,18 @@ export function routineGroups() {
   return out.sort((a, b) => (a.group || a.days[0].name).localeCompare(b.group || b.days[0].name));
 }
 
+/** Rename a multi-day routine (all its days keep their own names). */
+export async function renameGroup(oldName, newName) {
+  const days = routines.filter(r => r.group === oldName);
+  await db.transact(['routines'], s => days.forEach(r => s.routines.put({ ...r, group: newName })));
+  await reload();
+}
+/** Delete a multi-day routine (all its days). Logged sets are kept. */
+export async function deleteGroup(name) {
+  const days = routines.filter(r => r.group === name);
+  await db.transact(['routines'], s => days.forEach(r => s.routines.delete(r.id)));
+  await reload();
+}
 /** The day that comes after the last one started for this group (rotation), or the first day. */
 export async function nextDay(group) {
   const days = routineGroups().find(g => g.group === group)?.days || [];

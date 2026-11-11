@@ -5,6 +5,20 @@ const LOCALES = { en: 'en-US', es: 'es-419' };
 
 export const dict = {
   en: {
+    // ---- v2.2 ----
+    renameDay: "Rename day",
+    renameDayX: "Rename “{name}”",
+    editRoutine: "Edit exercises",
+    editRoutineSub: "Sets, reps, order",
+    deleteWholeRoutine: "Delete routine ({n} days)",
+    deleteWholeRoutine_one: "Delete routine (1 day)",
+    suggestedRoutines: "Suggested",
+    addThisRoutine: "Add this routine",
+    yourBodyweight: "Your body weight",
+    yourBodyweightHint: "Body weight (kg) — used for bodyweight exercises",
+    replaceOldAsk: "Replace your old routine “{names}”? It has the same split. Your logged sets are kept.",
+    replace: "Replace",
+    bodyweightSaved: "Body weight {kg} kg logged",
     replaceOld: "Replace my old routine “{names}”",
     replaceOldSub: "It has the same split; its {n} days are removed. Your logged sets are kept.",
     // ---- v2.1: routine days, shared routines, bodyweight ----
@@ -251,6 +265,20 @@ export const dict = {
   },
 
   es: {
+    // ---- v2.2 ----
+    renameDay: "Renombrar día",
+    renameDayX: "Renombrar «{name}»",
+    editRoutine: "Editar ejercicios",
+    editRoutineSub: "Series, repeticiones, orden",
+    deleteWholeRoutine: "Borrar rutina ({n} días)",
+    deleteWholeRoutine_one: "Borrar rutina (1 día)",
+    suggestedRoutines: "Sugeridas",
+    addThisRoutine: "Agregar esta rutina",
+    yourBodyweight: "Tu peso corporal",
+    yourBodyweightHint: "Peso corporal (kg): se usa en los ejercicios de peso corporal",
+    replaceOldAsk: "¿Reemplazar tu rutina anterior «{names}»? Es la misma división. Tus series registradas se mantienen.",
+    replace: "Reemplazar",
+    bodyweightSaved: "Peso corporal de {kg} kg registrado",
     replaceOld: "Reemplazar mi rutina anterior «{names}»",
     replaceOldSub: "Es la misma división; se quitan sus {n} días. Tus series registradas se mantienen.",
     // ---- v2.1: routine days, shared routines, bodyweight ----

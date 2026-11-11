@@ -8,7 +8,7 @@ import { isSQLite } from '../sqlite.js';
 import { saveFile, canShareFiles } from '../files.js';
 import { testAlarm } from '../timer.js';
 
-export const APP_VERSION = '2.1.0';
+export const APP_VERSION = '2.2.0';
 const ALL_PLATES = [25, 20, 15, 10, 5, 2.5, 2, 1.25, 1, 0.5];
 
 export async function render(_, ctx) {

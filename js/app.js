@@ -137,13 +137,21 @@ function registerSW() {
     return;
   }
   let reloading = false;
+  // Updates apply by themselves right after opening the app (nothing typed yet);
+  // once you start using it, a notice asks first so a workout is never interrupted.
+  let touched = false;
+  const bootAt = Date.now();
+  window.addEventListener('pointerdown', () => { touched = true; }, { once: true, capture: true });
+  const apply = w => { reloading = true; w.postMessage('skipWaiting'); };
+  const offer = w => (!touched && Date.now() - bootAt < 20000
+    ? apply(w)
+    : toast(t('updateReady'), { ms: 0, action: { label: t('reload'), fn: () => apply(w) } }));
   navigator.serviceWorker.register('./sw.js').then(reg => {
-    const offer = w => toast(t('updateReady'), { ms: 0, action: { label: t('reload'), fn: () => { reloading = true; w.postMessage('skipWaiting'); } } });
+    const watch = w => w?.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) offer(w); });
     if (reg.waiting && navigator.serviceWorker.controller) offer(reg.waiting);
-    reg.addEventListener('updatefound', () => {
-      const w = reg.installing;
-      w?.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) offer(w); });
-    });
+    watch(reg.installing);
+    reg.addEventListener('updatefound', () => watch(reg.installing));
+    reg.update().catch(() => {});   // check right away on every open
   }).catch(e => console.warn('SW registration failed', e));
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (reloading) location.reload(); });
 }
