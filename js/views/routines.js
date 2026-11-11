@@ -15,27 +15,50 @@ const totalSets = r => r.exercises.reduce((a, e) => a + e.sets, 0);
 const firstColor = r => data.getCategory(data.getExercise(r.exercises[0]?.id)?.categoryId)?.color;
 
 export async function renderList(_, ctx) {
-  const list = [...data.routines].sort((a, b) => a.name.localeCompare(b.name));
+  const groups = data.routineGroups();
+  const nexts = new Map(await Promise.all(groups.filter(g => g.group).map(async g => [g.group, (await data.nextDay(g.group))?.id])));
   const create = async () => {
     const v = await formDialog(t('newRoutine'), [{ name: 'name', label: t('routineName'), required: true, maxlength: 40 }], t('create'));
     if (!v) return;
     const r = await data.saveRoutine({ name: v.name, exercises: [] });
     ctx.go('/routine/' + r.id);
   };
+  const addDay = async g => {
+    const v = await formDialog(t('addDay'), [{ name: 'name', label: t('dayName'), value: t('dayN', { n: g.days.length + 1 }), required: true, maxlength: 40 }], t('create'));
+    if (!v) return;
+    const r = await data.saveRoutine({ name: v.name, group: g.group, order: Math.max(0, ...g.days.map(d => d.order || 0)) + 1, exercises: [] });
+    ctx.go('/routine/' + r.id);
+  };
+  const summary = r => (r.exercises.length ? `${t('nExercises', { n: r.exercises.length })} · ${t('nSets', { n: totalSets(r) })}` : t('noExercisesYet'));
+  const names = r => r.exercises.map(e => data.getExercise(e.id)).filter(Boolean).map(data.exName).slice(0, 4).join(' · ') + (r.exercises.length > 4 ? ' …' : '');
+  const startBtn = (r, primary) => r.exercises.length > 0 && h('button', { class: 'btn ' + (primary ? 'primary' : 'outline'), 'aria-label': t('start') + ' ' + data.routineLabel(r), onclick: () => start(r.id, ctx) }, icon('play', 18), t('start'));
+
+  const single = r => h('div', { class: 'card routine-card', style: { '--c': firstColor(r) || 'var(--accent)' } },
+    h('button', { class: 'routine-main', onclick: () => ctx.go('/routine/' + r.id) },
+      h('div', { class: 'card-title' }, r.name),
+      h('div', { class: 'muted small' }, summary(r)),
+      h('div', { class: 'small', style: { marginTop: '4px' } }, names(r))),
+    startBtn(r, true));
+
+  const multi = g => h('div', { class: 'card group-card' },
+    h('div', { class: 'group-head' }, h('div', { class: 'card-title' }, g.group), h('span', { class: 'muted small' }, t('nDays', { n: g.days.length }))),
+    g.days.map(r => {
+      const isNext = nexts.get(g.group) === r.id;
+      return h('div', { class: 'day-row' + (isNext ? ' next' : ''), style: { '--c': firstColor(r) || 'var(--accent)' } },
+        h('button', { class: 'routine-main', onclick: () => ctx.go('/routine/' + r.id) },
+          h('div', { class: 'day-name' }, r.name, isNext && h('span', { class: 'next-tag' }, t('nextUp'))),
+          h('div', { class: 'muted small' }, summary(r)),
+          h('div', { class: 'small', style: { marginTop: '2px' } }, names(r))),
+        startBtn(r, isNext));
+    }),
+    h('button', { class: 'add-set', style: { marginTop: '6px' }, onclick: () => addDay(g) }, icon('plus', 18), t('addDay')));
+
   return h('div', { class: 'screen' },
     topbar({ title: t('nav_routines'), actions: [{ icon: 'plus', label: t('newRoutine'), onclick: create }] }),
     h('div', { class: 'content' },
-      list.length ? list.map(r => h('div', { class: 'card routine-card', style: { '--c': firstColor(r) || 'var(--accent)' } },
-        h('button', { class: 'routine-main', onclick: () => ctx.go('/routine/' + r.id) },
-          h('div', { class: 'card-title' }, r.name),
-          h('div', { class: 'muted small' }, r.exercises.length
-            ? `${t('nExercises', { n: r.exercises.length })} · ${t('nSets', { n: totalSets(r) })}`
-            : t('noExercisesYet')),
-          h('div', { class: 'small', style: { marginTop: '4px' } }, r.exercises.map(e => data.getExercise(e.id)).filter(Boolean).map(data.exName).slice(0, 4).join(' · ') + (r.exercises.length > 4 ? ' …' : ''))),
-        r.exercises.length > 0 && h('button', { class: 'btn primary', 'aria-label': t('start') + ' ' + r.name, onclick: () => start(r.id, ctx) }, icon('play', 18), t('start'))))
-        : h('div', { class: 'empty' }, t('noRoutines')),
+      groups.length ? groups.map(g => (g.group ? multi(g) : single(g.days[0]))) : h('div', { class: 'empty' }, t('noRoutines')),
       h('button', { class: 'btn big outline', onclick: create }, icon('plus'), t('newRoutine')),
-      list.length > 0 && h('p', { class: 'muted small center' }, t('routinesHint'))));
+      groups.length > 0 && h('p', { class: 'muted small center' }, t('routinesHint'))));
 }
 
 export async function renderEdit([id], ctx) {
@@ -57,7 +80,7 @@ export async function renderEdit([id], ctx) {
   };
 
   return h('div', { class: 'screen' },
-    topbar({ title: r.name, sub: items.length ? `${t('nExercises', { n: items.length })} · ${t('nSets', { n: totalSets({ exercises: items }) })}` : null, back: () => ctx.back('/routines'), actions: [{ icon: 'edit', label: t('renameRoutine'), onclick: rename }] }),
+    topbar({ title: r.name, sub: [r.group, items.length && `${t('nExercises', { n: items.length })} · ${t('nSets', { n: totalSets({ exercises: items }) })}`].filter(Boolean).join(' · ') || null, back: () => ctx.back('/routines'), actions: [{ icon: 'edit', label: t('renameRoutine'), onclick: rename }] }),
     h('div', { class: 'content' },
       items.length > 0 && h('button', { class: 'btn primary big', onclick: () => start(r.id, ctx) }, icon('play'), t('startThisRoutine')),
       items.map((e, i) => {

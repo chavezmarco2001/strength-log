@@ -1,7 +1,7 @@
 // Pieces shared by several screens.
 import { h, icon } from '../ui.js';
 import * as data from '../data.js';
-import { t, fmtNum, fmtSet } from '../i18n.js';
+import { t, fmtNum } from '../i18n.js';
 
 /**
  * Table of sets with a ✓ column (FitNotes/Hevy style).
@@ -16,10 +16,16 @@ export function setTable({ sets, prev = [], prIds = new Set(), selectedId = null
       const p = prev[Math.min(i, prev.length - 1)];
       return h('div', { class: 'srow' + (done ? ' is-done' : '') + (s.id === selectedId ? ' sel' : ''), onclick: e => { if (!e.target.closest('.tick')) onRow?.(s); } },
         h('span', { class: 'n' }, i + 1),
-        h('span', { class: 'prev' }, showPrev && p ? fmtSet(p) : ''),
-        h('span', { class: 'val' }, fmtNum(s.weight), h('small', {}, ' kg'), ' × ', s.reps, prIds.has(s.id) && h('span', { class: 'trophy' }, '🏆')),
+        h('span', { class: 'prev' }, showPrev && p ? data.setLabel(p) : ''),
+        h('span', { class: 'val' }, valueOf(s), ' × ', s.reps, prIds.has(s.id) && h('span', { class: 'trophy' }, '🏆')),
         h('button', { class: 'tick', role: 'checkbox', 'aria-checked': String(done), 'aria-label': t(done ? 'markNotDone' : 'markDone'), onclick: () => onTick(s) }, icon('check')));
     }));
+}
+
+/** Big value of a set: "60 kg", or for bodyweight exercises "BW" / "BW +10". */
+function valueOf(s) {
+  if (!data.isBW(s.exerciseId)) return [fmtNum(s.weight), h('small', {}, ' kg')];
+  return [t('bwShort'), s.weight ? h('small', {}, (s.weight > 0 ? ' +' : ' −') + fmtNum(Math.abs(s.weight))) : ''];
 }
 
 /** Coloured dots for the categories trained in a list of sets (max 4). */

@@ -24,15 +24,18 @@ export async function render(_, ctx) {
     Promise.all(ids.map(async id => markPRs(data.doneOnly(await data.setsForExercise(id))))).then(ms => new Set(ms.flatMap(m => [...m.keys()]))),
   ]);
   const done = sets.filter(data.isDone);
-  const volume = done.reduce((a, s) => a + s.weight * s.reps, 0);
+  const volume = done.reduce((a, s) => a + data.setVolume(s), 0);
   const minutes = workoutMinutes(done);
 
   // ----- actions -----
   const finish = async () => { if (await openCheckin(date)) ctx.refresh(); };
   const pickRoutine = async () => {
     if (!data.routines.length) return ctx.go('/routines');
-    const id = await chooser(t('startRoutine'), [...data.routines].sort((a, b) => a.name.localeCompare(b.name)).map(r => ({
-      label: r.name, sub: r.exercises.map(e => data.getExercise(e.id)).filter(Boolean).map(data.exName).join(' · '), value: r.id,
+    const groups = data.routineGroups();
+    const nexts = new Set((await Promise.all(groups.filter(g => g.group).map(g => data.nextDay(g.group)))).filter(Boolean).map(r => r.id));
+    const id = await chooser(t('startRoutine'), groups.flatMap(g => g.days).map(r => ({
+      label: (nexts.has(r.id) ? '▶ ' : '') + data.routineLabel(r) + (nexts.has(r.id) ? ' · ' + t('nextUp') : ''),
+      sub: r.exercises.map(e => data.getExercise(e.id)).filter(Boolean).map(data.exName).join(' · '), value: r.id,
     })));
     if (!id) return;
     const n = await data.startRoutine(id, date);
@@ -93,7 +96,7 @@ export async function render(_, ctx) {
   if (sets.length) {
     const pct = Math.round((done.length / sets.length) * 100);
     top = h('div', { class: 'hero' },
-      h('div', { class: 'hero-label' }, routine ? t('routine') : date === today ? t('todaysWorkout') : t('workout')),
+      h('div', { class: 'hero-label' }, routine ? routine.group || t('routine') : date === today ? t('todaysWorkout') : t('workout')),
       h('div', { class: 'hero-title' }, routine ? routine.name : t('nExercises', { n: ids.length })),
       h('div', { class: 'hero-stats' },
         h('div', {}, h('b', {}, `${done.length}/${sets.length}`), h('span', {}, t('setsWord'))),

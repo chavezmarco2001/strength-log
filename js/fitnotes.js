@@ -161,8 +161,8 @@ export function analyzeFitNotesBackup(buffer) {
         const exercises = items.filter(i => i.routine_section_id === s._id).sort(byOrder)
           .map(i => exs.get(i.exercise_id)).filter(e => e && isWeight(e)).map(info);
         if (!exercises.length) continue;
-        const name = own.length > 1 ? `${String(r.name).trim()} – ${String(s.name).trim()}` : String(r.name).trim();
-        routines.push({ name, exercises });
+        const multi = own.length > 1;
+        routines.push({ name: multi ? String(s.name).trim() : String(r.name).trim(), group: multi ? String(r.name).trim() : undefined, order: own.indexOf(s) + 1, exercises });
       }
     }
   }

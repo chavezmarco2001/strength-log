@@ -172,6 +172,7 @@ button.chip:active { background: var(--accent); color: var(--accent-ink); }
 .ex-card { padding: 0; overflow: hidden; border-left: 4px solid var(--c, var(--accent)); }
 .ex-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 13px 8px 6px 14px; text-align: left; }
 .ex-head .card-title { flex: 1; min-width: 0; }
+.ex-head .tag { display: flex; margin-top: 3px; }
 .ex-head .count { font-family: var(--display); font-weight: 800; font-size: 17px; color: var(--muted); }
 .ex-head .count.all { color: var(--done); }
 .set-table { display: flex; flex-direction: column; padding: 0 6px 6px; }
@@ -281,6 +282,13 @@ textarea.input { resize: vertical; }
 .stats-line { padding: 0 2px; }
 .routine-card { display: flex; align-items: center; gap: 12px; border-left: 4px solid var(--c, var(--accent)); }
 .routine-main { flex: 1; min-width: 0; text-align: left; }
+.group-card { padding: 14px 10px 8px 14px; }
+.group-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding-right: 6px; margin-bottom: 4px; }
+.group-head .card-title { font-family: var(--display); font-size: 24px; font-weight: 800; }
+.day-row { display: flex; align-items: center; gap: 10px; padding: 10px 4px 10px 12px; border-left: 3px solid var(--c); border-radius: 4px 12px 12px 4px; margin-top: 8px; background: var(--surface2); }
+.day-row.next { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.day-name { font-weight: 750; font-size: 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.next-tag { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; padding: 3px 7px; border-radius: 6px; background: var(--grad); color: var(--accent-ink); }
 .rec-row { display: flex; align-items: baseline; gap: 10px; padding: 7px 0; }
 .rec-row > :first-child { flex: 1; }
 .rec-val { font-family: var(--display); font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }

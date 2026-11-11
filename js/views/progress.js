@@ -12,7 +12,7 @@ export async function render(_, ctx) {
   const today = toISODate();
   const [all, bw, sessions] = await Promise.all([data.allSets(), data.bodyweights(), data.allSessions()]);
   const sets = data.doneOnly(all);
-  const weeks = weeklyTotals(sets);
+  const weeks = weeklyTotals(sets.map(s => ({ ...s, weight: data.effWeight(s) })));
   const w0 = weekStart(today);
   const wk = weeks.find(w => w.week === w0) || { workouts: 0, sets: 0, volume: 0 };
   const month0 = today.slice(0, 7) + '-01';
@@ -62,7 +62,7 @@ export async function render(_, ctx) {
 
       h('h3', { class: 'section' }, t('recentRecords')),
       h('div', { class: 'card flush list' }, records.length
-        ? records.map(r => exRow(r.set.exerciseId, '🏆 ' + fmtSet(r.set), `${t(r.type === 'weight' ? 'prWeightShort' : 'prRepsShort')} · ${fmtShortY(r.set.date)}`))
+        ? records.map(r => exRow(r.set.exerciseId, '🏆 ' + data.setLabel(r.set), `${t(r.type === 'weight' ? 'prWeightShort' : 'prRepsShort')} · ${fmtShortY(r.set.date)}`))
         : h('p', { class: 'muted small pad' }, t('noRecordsYet'))),
 
       h('h3', { class: 'section' }, t('mostTrained'), h('button', { onclick: () => { ctx.state.pickFor = { mode: 'progress' }; ctx.go('/pick'); } }, t('allExercises'))),

@@ -19,6 +19,9 @@ Plain HTML/CSS/ES modules, **no build step and no dependencies**. GitHub Pages s
 - `js/views/*` one file per screen; `components.js` = set table with ✓, category dots
 - `css/app.css` design tokens at the top (accent themes via `data-accent`); display font Barlow Condensed in `fonts/` (OFL)
 - `sw.js` offline cache: **bump `VERSION` on every release** and list any new file in `ASSETS`
+- Multi-day routines = routines sharing `group` (each one is a day, ordered by `order`); `data.nextDay(group)` gives the rotation.
+- Bodyweight exercises: `exercise.type === 'bodyweight'` → set weight is EXTRA kg; labels via `data.setLabel`, volume via `data.setVolume` (uses logged body weight).
+- Shareable routine links: `#/add/<base64url JSON>` (see `data.addRoutinePack` / `encodePack`); a way to send the owner a routine without touching their phone.
 - Roadmap and ideas for later: `docs/plan-v2.md`
 
 ## Before committing

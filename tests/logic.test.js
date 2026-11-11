@@ -176,3 +176,20 @@ test('workoutMinutes ignores missing or silly timestamps', () => {
   assert.equal(workoutMinutes([{ t: 1000 }, { t: 1000 + 45 * 60000 }]), 45);
   assert.equal(workoutMinutes([{ t: 1000 }, { t: 1000 + 9 * 3600000 }]), null);
 });
+
+// ---------------------------------------------------------------- v2.1: shared routine links
+import { encodePack, decodePack, validatePack, routineLabel } from '../js/data.js';
+
+test('routine link packs survive encoding (accents included) and are validated', () => {
+  const pack = { v: 1, group: 'Push Pull Arms and Legs', bodyweight: 90, days: [{ name: 'Día 1 · Espalda y pecho', exercises: [{ name: 'Ring Push Up', category: 'Chest', sets: 3, bodyweight: true }] }] };
+  const text = encodePack(pack);
+  assert.match(text, /^[A-Za-z0-9_-]+$/);
+  assert.deepEqual(decodePack(text), pack);
+  assert.equal(validatePack(pack), null);
+  assert.equal(validatePack({ ...pack, v: 2 }), 'badPack');
+  assert.equal(validatePack({ ...pack, bodyweight: 5 }), 'badPack');
+  assert.equal(validatePack({ ...pack, days: [{ name: 'x', exercises: [{ name: 'y', sets: 0 }] }] }), 'badPack');
+  assert.equal(decodePack('%%%'), null);
+  assert.equal(routineLabel({ group: 'PPL', name: 'Día 1' }), 'PPL · Día 1');
+  assert.equal(routineLabel({ name: 'Solo' }), 'Solo');
+});

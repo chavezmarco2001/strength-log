@@ -64,4 +64,6 @@ const LIST = [
 ];
 
 const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-export const SEED_EXERCISES = LIST.map(([categoryId, name, nameEs]) => ({ id: 'x-' + slug(name), name, nameEs, categoryId }));
+// Done with body weight (+ optional extra weight)
+const BODYWEIGHT = new Set(['Push-Up', 'Chest Dip', 'Pull-Up', 'Chin-Up', 'Triceps Dip', 'Crunch', 'Hanging Leg Raise', 'Ab Wheel Rollout']);
+export const SEED_EXERCISES = LIST.map(([categoryId, name, nameEs]) => ({ id: 'x-' + slug(name), name, nameEs, categoryId, ...(BODYWEIGHT.has(name) ? { type: 'bodyweight' } : {}) }));

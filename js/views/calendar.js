@@ -35,7 +35,7 @@ export async function render(_, ctx) {
   }
   const dows = Array.from({ length: 7 }, (_, i) => h('span', { class: 'cal-dow' }, fmtDate(addDays('2026-11-02', i), { weekday: 'narrow' })));
 
-  const vol = sets.reduce((a, s) => a + s.weight * s.reps, 0);
+  const vol = sets.reduce((a, s) => a + data.setVolume(s), 0);
   const header = h('header', { class: 'cal-head' },
     h('button', { class: 'icon-btn', 'aria-label': t('prevMonth'), onclick: () => shift(-1) }, icon('left')),
     h('div', { class: 'title' }, (x => x.charAt(0).toUpperCase() + x.slice(1))(fmtDate(first, { month: 'long', year: 'numeric' }))),
@@ -67,7 +67,7 @@ async function dayDetail(date, ctx) {
   }
   const groups = groupByExercise(sets);
   const session = await data.getSession(date);
-  const vol = sets.reduce((a, s) => a + s.weight * s.reps, 0);
+  const vol = sets.reduce((a, s) => a + data.setVolume(s), 0);
   const min = workoutMinutes(sets);
   const repeatToday = async () => {
     const n = await data.repeatWorkout(date, today);
@@ -81,7 +81,7 @@ async function dayDetail(date, ctx) {
       const cat = ex && data.getCategory(ex.categoryId);
       return h('button', { class: 'card ex-card', style: { '--c': cat?.color || 'var(--accent)', padding: '12px 14px' }, onclick: () => { ctx.state.date = date; ctx.state.followToday = date === today; ctx.go('/ex/' + id + '/history'); } },
         h('div', { class: 'card-title' }, ex ? data.exName(ex) : '?'),
-        h('div', { class: 'chips', style: { marginTop: '6px' } }, list.map(s => h('span', { class: 'chip' }, fmtSet(s)))));
+        h('div', { class: 'chips', style: { marginTop: '6px' } }, list.map(s => h('span', { class: 'chip' }, data.setLabel(s)))));
     }),
     session?.note && h('div', { class: 'card note' }, '“' + session.note + '”'),
     h('div', { class: 'btn-row' },

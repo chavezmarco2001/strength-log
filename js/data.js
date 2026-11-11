@@ -2,17 +2,18 @@
 //
 // Records (IndexedDB stores):
 //   categories { id, name, nameEs?, color, order }
-//   exercises  { id, name, nameEs?, categoryId, rest?, note? }   rest = seconds, overrides default
+//   exercises  { id, name, nameEs?, categoryId, rest?, note?, type? }   rest = seconds; type 'bodyweight' → weight = extra kg
 //   sets       { id, exerciseId, date:'YYYY-MM-DD', weight (kg), reps, t (ordering ms), comment?, done? }
 //              done === false → planned (not yet completed). Missing = completed (v1 data, imports).
 //   sessions   { date, routineId?, mood?, motivation?, satisfaction?, note?, finishedAt? }
 //   routines   { id, name, exercises: [{ id, sets, reps? }], items: [exerciseId] }   items = ids, kept in sync (v1)
+//              group?, order?   → several routines with the same group = one routine with days
 //   bodyweight { date, kg }
 //   settings   { k, v }
 import * as db from './db.js';
 import { SEED_CATEGORIES, SEED_EXERCISES, PALETTE } from './seed.js';
 import { uid, norm, parseISODate, toISODate, wkey } from './util.js';
-import { getLang } from './i18n.js';
+import { getLang, t, fmtNum, fmtSet } from './i18n.js';
 import { checkPR } from './stats.js';
 import { toCSV } from './csv.js';
 
@@ -36,6 +37,7 @@ export async function init() {
   for (const r of await db.getAll('settings')) settings[r.k] = r.v;
   if (!settings.seeded) await seed();
   await reload();
+  await bodyweights();
   anySets = (await db.count('sets')) > 0;
 }
 
@@ -186,9 +188,50 @@ export async function workoutDays(limit = Infinity) {
 }
 
 // ---------- body weight ----------
-export const bodyweights = async () => (await db.getAll('bodyweight')).sort((a, b) => (a.date < b.date ? -1 : 1));
-export const saveBodyweight = (date, kg) => db.put('bodyweight', { date, kg });
-export const deleteBodyweight = date => db.del('bodyweight', date);
+let bwCache = [];   // body weight entries, oldest first (kept in memory for set labels and volume)
+export async function bodyweights() {
+  bwCache = (await db.getAll('bodyweight')).sort((a, b) => (a.date < b.date ? -1 : 1));
+  return bwCache;
+}
+export async function saveBodyweight(date, kg) { await db.put('bodyweight', { date, kg }); await bodyweights(); }
+export async function deleteBodyweight(date) { await db.del('bodyweight', date); await bodyweights(); }
+/** Body weight on `date`: the last entry on or before it (or the first entry after it). */
+export function bodyweightAt(date) {
+  let v = null;
+  for (const b of bwCache) { if (b.date <= date) v = b.kg; else break; }
+  return v ?? bwCache[0]?.kg ?? null;
+}
+
+// ---------- bodyweight exercises ----------
+// exercise.type === 'bodyweight' → a set's `weight` is EXTRA weight (0 = body weight only,
+// +10 = vest, −20 = assisted). Records compare reps at the same extra weight; volume uses
+// body weight + extra.
+export const isBW = exOrId => (typeof exOrId === 'string' ? exMap.get(exOrId) : exOrId)?.type === 'bodyweight';
+export const effWeight = s => (isBW(s.exerciseId) ? (bodyweightAt(s.date) ?? 0) + s.weight : s.weight);
+export const setVolume = s => effWeight(s) * s.reps;
+export function setLabel(s) {
+  if (!isBW(s.exerciseId)) return fmtSet(s);
+  const w = s.weight;
+  return `${t('bwShort')}${w ? (w > 0 ? ' +' : ' −') + fmtNum(Math.abs(w)) : ''} × ${s.reps}`;
+}
+/**
+ * Marks an exercise as bodyweight (or not). When turning it on, sets logged with the
+ * body weight as their weight (e.g. 90 kg on push-ups) become "body weight + 0".
+ * Returns how many sets were converted.
+ */
+export async function setExerciseBodyweight(id, on, convertKg = null) {
+  const ex = exMap.get(id);
+  if (!ex) return 0;
+  const out = { ...ex };
+  if (on) out.type = 'bodyweight'; else delete out.type;
+  const toFix = on && convertKg > 0 ? (await setsForExercise(id)).filter(s => Math.abs(s.weight - convertKg) < 0.01) : [];
+  await db.transact(['exercises', 'sets'], s => {
+    s.exercises.put(out);
+    toFix.forEach(x => s.sets.put({ ...x, weight: 0 }));
+  });
+  await reload();
+  return toFix.length;
+}
 
 /** Most recently trained exercises, newest first. */
 export async function recentExercises(n) {
@@ -259,6 +302,113 @@ export async function routineFromDay(date, name) {
   return saveRoutine({ name, exercises: exercisesPlan });
 }
 
+// ---------- routines with days ----------
+// A multi-day routine is a set of routines sharing `group` (the routine's name);
+// each one is a day (`name`), ordered by `order`.
+export const routineLabel = r => (r.group ? `${r.group} · ${r.name}` : r.name);
+
+/** [{ group: string|null, days: [routine] }] — grouped first by name, single routines as their own entry. */
+export function routineGroups() {
+  const out = [], byGroup = new Map();
+  for (const r of routines) {
+    if (!r.group) { out.push({ group: null, days: [r] }); continue; }
+    if (!byGroup.has(r.group)) { const g = { group: r.group, days: [] }; byGroup.set(r.group, g); out.push(g); }
+    byGroup.get(r.group).days.push(r);
+  }
+  for (const g of out) g.days.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
+  return out.sort((a, b) => (a.group || a.days[0].name).localeCompare(b.group || b.days[0].name));
+}
+
+/** The day that comes after the last one started for this group (rotation), or the first day. */
+export async function nextDay(group) {
+  const days = routineGroups().find(g => g.group === group)?.days || [];
+  if (!days.length) return null;
+  const ids = days.map(d => d.id);
+  const last = (await allSessions()).filter(s => ids.includes(s.routineId)).sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+  return last ? days[(ids.indexOf(last.routineId) + 1) % days.length] : days[0];
+}
+
+/**
+ * Adds a routine shared as a link/file:
+ *   { v: 1, group?, bodyweight?: kg, replaces?: [routine names], days: [{ name, exercises: [{ name, category?, sets, reps?, bodyweight? }] }] }
+ * bodyweight (kg) is logged for today; exercises flagged bodyweight are switched to that type
+ * and their sets logged at that weight become "body weight + 0".
+ * Exercises are matched by name (case/accents/hyphens ignored); missing ones are created.
+ * A day that already exists (same group + name) is replaced. Returns what changed.
+ */
+/** Routines matching a name to replace: a group with that name, that exact name, or "Name – Day" (v2.0 imports). */
+export function routinesNamed(name) {
+  const n = norm(name);
+  return routines.filter(r => (r.group && norm(r.group) === n) || norm(r.name) === n || norm(r.name).startsWith(n + ' – '));
+}
+
+export async function addRoutinePack(pack, { replaceOld = true } = {}) {
+  const err = validatePack(pack);
+  if (err) throw new Error(err);
+  const res = { created: [], replaced: [], removed: [], newExercises: [], bodyweightExercises: [], converted: 0, bodyweight: null };
+  if (replaceOld) for (const old of pack.replaces || []) for (const r of routinesNamed(old)) { await deleteRoutine(r.id); res.removed.push(routineLabel(r)); }
+  const kg = pack.bodyweight > 0 ? pack.bodyweight : null;
+  if (kg) { await saveBodyweight(toISODate(), kg); res.bodyweight = kg; }
+  const catByNorm = new Map();
+  for (const c of categories) { catByNorm.set(norm(c.name), c); if (c.nameEs) catByNorm.set(norm(c.nameEs), c); }
+  const group = pack.group ? String(pack.group).trim() : undefined;
+  for (const [i, day] of pack.days.entries()) {
+    const items = [];
+    for (const e of day.exercises) {
+      let ex = findExerciseByName(e.name);
+      if (!ex) {
+        let cat = e.category ? catByNorm.get(norm(e.category)) : null;
+        if (!cat && e.category) { cat = await saveCategory({ name: String(e.category).trim() }); catByNorm.set(norm(cat.name), cat); }
+        ex = await saveExercise({ name: String(e.name).trim(), categoryId: (cat || categories[0]).id });
+        res.newExercises.push(ex.name);
+      }
+      if (e.bodyweight && !isBW(ex)) {
+        res.converted += await setExerciseBodyweight(ex.id, true, kg ?? bodyweightAt(toISODate()));
+        res.bodyweightExercises.push(exName(getExercise(ex.id)));
+      }
+      if (!items.some(x => x.id === ex.id)) items.push({ id: ex.id, sets: e.sets, ...(e.reps > 0 ? { reps: e.reps } : {}) });
+    }
+    const name = String(day.name).trim();
+    const existing = routines.find(r => (r.group || undefined) === group && norm(r.name) === norm(name));
+    await saveRoutine({ ...(existing || {}), name, group, order: i + 1, exercises: items });
+    (existing ? res.replaced : res.created).push(name);
+  }
+  return res;
+}
+
+export function validatePack(p) {
+  if (!p || typeof p !== 'object' || p.v !== 1 || !Array.isArray(p.days) || !p.days.length || p.days.length > 14) return 'badPack';
+  if (p.group != null && (typeof p.group !== 'string' || p.group.length > 60)) return 'badPack';
+  if (p.bodyweight != null && !(typeof p.bodyweight === 'number' && p.bodyweight > 20 && p.bodyweight < 400)) return 'badPack';
+  if (p.replaces != null && (!Array.isArray(p.replaces) || p.replaces.length > 10 || p.replaces.some(x => typeof x !== 'string' || !x.trim() || x.length > 60))) return 'badPack';
+  for (const d of p.days) {
+    if (!d || typeof d.name !== 'string' || !d.name.trim() || d.name.length > 60 || !Array.isArray(d.exercises) || d.exercises.length > 40) return 'badPack';
+    for (const e of d.exercises) {
+      if (!e || typeof e.name !== 'string' || !e.name.trim() || e.name.length > 80) return 'badPack';
+      if (!Number.isInteger(e.sets) || e.sets < 1 || e.sets > 20) return 'badPack';
+      if (e.reps != null && (!Number.isInteger(e.reps) || e.reps < 0 || e.reps > 100)) return 'badPack';
+      if (e.category != null && (typeof e.category !== 'string' || e.category.length > 40)) return 'badPack';
+      if (e.bodyweight != null && typeof e.bodyweight !== 'boolean') return 'badPack';
+    }
+  }
+  return null;
+}
+
+/** Link-safe text <-> pack (UTF-8 JSON as base64url). */
+export function encodePack(pack) {
+  const bytes = new TextEncoder().encode(JSON.stringify(pack));
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+export function decodePack(text) {
+  try {
+    const b64 = text.replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
+    return JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))));
+  } catch { return null; }
+}
+
 // ---------- backups ----------
 /** false, 'never', or number of days since the last backup (only when it's due). */
 export function needsBackup() {
@@ -309,6 +459,7 @@ export async function restoreAll(o) {
   Object.assign(settings, DEFAULTS, { seeded: true });
   for (const r of o.settings || []) settings[r.k] = r.v;
   await reload();
+  await bodyweights();
   anySets = o.sets.length > 0;
 }
 
@@ -401,13 +552,14 @@ export async function importFitNotes(an, { removeUnusedBuiltins = false, restSec
   }
   for (const l of an.library || []) exercise(l.name, l.category, l.color);
 
-  const routineNames = new Set(routines.map(r => norm(r.name)));
+  const routineNames = new Set(routines.map(r => norm(routineLabel(r))));
   for (const r of an.routines || []) {
-    if (routineNames.has(norm(r.name))) { report.existingRoutines.push(r.name); continue; }
-    routineNames.add(norm(r.name));
+    const label = routineLabel(r);
+    if (routineNames.has(norm(label))) { report.existingRoutines.push(label); continue; }
+    routineNames.add(norm(label));
     const ids = [...new Set(r.exercises.map(e => exercise(e.name, e.category, e.color).id))];
-    newRoutines.push(normalizeRoutine({ id: uid(), name: r.name, exercises: ids.map(id => ({ id, sets: DEFAULT_ROUTINE_SETS })) }));
-    report.createdRoutines.push(r.name);
+    newRoutines.push(normalizeRoutine({ id: uid(), name: r.name, ...(r.group ? { group: r.group, order: r.order } : {}), exercises: ids.map(id => ({ id, sets: DEFAULT_ROUTINE_SETS })) }));
+    report.createdRoutines.push(label);
   }
 
   await db.transact(['categories', 'exercises', 'sets', 'routines'], s => {

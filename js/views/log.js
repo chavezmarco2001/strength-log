@@ -7,7 +7,7 @@ import { markPRs, dailyStats, records, e1rm, bestE1rm, platesFor } from '../stat
 import { lineChart } from '../chart.js';
 import * as timer from '../timer.js';
 import { afterComplete, toggleDone, restFor } from '../actions.js';
-import { exerciseForm } from './forms.js';
+import { exerciseForm, setBodyweight } from './forms.js';
 import { setTable } from './components.js';
 
 const drafts = new Map();   // "exerciseId|date" → unsaved { weight, reps } typed by the user
@@ -52,6 +52,8 @@ function trackTab(ex, all, date, ctx) {
   const editSet = editing ? todays.find(s => s.id === editing) : null;
   if (!editSet) editing = null;
   const next = todays.find(s => !data.isDone(s));            // next planned set to complete
+  const bw = data.isBW(ex);                                    // bodyweight: weight = extra kg
+  const minW = bw ? -300 : 0;
   const nextNo = next ? todays.indexOf(next) + 1 : 0;
 
   // Suggested values: set being edited › what you typed › next planned set › last set today › first set last time.
@@ -63,7 +65,7 @@ function trackTab(ex, all, date, ctx) {
   function bump(input, d, isInt) {
     let v = parseNum(input.value);
     if (!Number.isFinite(v)) v = 0;
-    v = Math.max(0, round2(v + d));
+    v = Math.max(isInt ? 0 : minW, round2(v + d));
     input.value = String(isInt ? Math.round(v) : v);
     saveDraft();
   }
@@ -77,7 +79,7 @@ function trackTab(ex, all, date, ctx) {
   function read() {
     const w = wIn.value.trim() === '' ? 0 : parseNum(wIn.value);
     const r = parseNum(rIn.value);
-    if (!Number.isFinite(w) || w < 0 || w > 2000 || !Number.isInteger(r) || r < 1 || r > 1000) {
+    if (!Number.isFinite(w) || w < minW || w > 2000 || !Number.isInteger(r) || r < 1 || r > 1000) {
       toast(t('invalidSet'), { kind: 'error' });
       return null;
     }
@@ -119,7 +121,7 @@ function trackTab(ex, all, date, ctx) {
   const lastEl = last.length
     ? h('div', { class: 'last' },
       h('div', { class: 'muted small' }, t('lastTime', { date: fmtShortY(lastDate) })),
-      h('div', { class: 'chips' }, last.map(s => h('button', { class: 'chip', onclick: () => { wIn.value = s.weight; rIn.value = s.reps; saveDraft(); } }, fmtSet(s)))))
+      h('div', { class: 'chips' }, last.map(s => h('button', { class: 'chip', onclick: () => { wIn.value = s.weight; rIn.value = s.reps; saveDraft(); } }, data.setLabel(s)))))
     : !done.length && h('div', { class: 'last muted small' }, t('firstTime'));
 
   const actions = editSet
@@ -130,7 +132,7 @@ function trackTab(ex, all, date, ctx) {
     : h('button', { class: 'btn primary big save-btn', onclick: save }, icon('check', 26), next ? t('completeSetN', { n: nextNo }) : t('saveSet'));
 
   const tools = h('div', { class: 'tools' },
-    h('button', { class: 'btn small', onclick: () => plateSheet(parseNum(wIn.value)) }, icon('plates', 18), t('plates')),
+    !bw && h('button', { class: 'btn small', onclick: () => plateSheet(parseNum(wIn.value)) }, icon('plates', 18), t('plates')),
     h('button', { class: 'btn small', onclick: () => timer.startRest(restFor(ex)) }, icon('play', 16), t('restNow', { v: fmtRest(restFor(ex)) })),
     todays.length > 0 && !editSet && h('button', { class: 'btn small', onclick: copyLast }, icon('copy', 18), t('repeatLast')));
 
@@ -138,7 +140,8 @@ function trackTab(ex, all, date, ctx) {
   return h('div', { class: 'content track' },
     note,
     lastEl,
-    stepper(wIn, Number(data.settings.step) || 2.5, false, t('weightKg')),
+    stepper(wIn, Number(data.settings.step) || 2.5, false, bw ? t('extraKg') : t('weightKg')),
+    bw && h('p', { class: 'muted small', style: { margin: '-6px 2px 0' } }, data.bodyweightAt(date) != null ? t('bwNote', { kg: fmtNum(data.bodyweightAt(date)) }) : t('bwNoWeight')),
     stepper(rIn, 1, true, t('reps')),
     actions,
     tools,
@@ -193,14 +196,14 @@ function historyTab(all, ctx) {
   return h('div', { class: 'content' },
     dates.slice(0, histLimit).map(d => {
       const list = byDate.get(d);
-      const vol = list.reduce((a, s) => a + s.weight * s.reps, 0);
-      const best = bestE1rm(list);
+      const vol = list.reduce((a, s) => a + data.setVolume(s), 0);
+      const best = data.isBW(list[0].exerciseId) ? null : bestE1rm(list);
       return h('div', { class: 'card hist' },
         h('button', { class: 'hist-head', onclick: () => ctx.setDate(d) },
           h('span', {}, fmtLong(d)),
           h('span', { class: 'muted small' }, t('volumeShort', { v: fmtNum(Math.round(vol)) }) + (best ? ' · 1RM ≈ ' + fmtNum(Math.round(best.value)) : ''))),
         list.map(s => h('div', { class: 'hist-set' },
-          h('span', {}, fmtW(s.weight), ' × ', s.reps),
+          h('span', {}, data.setLabel(s)),
           prs.has(s.id) && h('span', { class: 'trophy' }, ' 🏆'),
           s.comment && h('div', { class: 'muted small' }, s.comment))));
     }),
@@ -210,6 +213,7 @@ function historyTab(all, ctx) {
 // ---------------------------------------------------------------- Graph
 function graphTab(all, ctx) {
   if (!all.length) return h('div', { class: 'content empty' }, t('noHistory'));
+  if (data.isBW(all[0].exerciseId)) return bwGraphTab(all, ctx);
   const days = { '3m': 92, '1y': 366, all: Infinity }[graphRange];
   const cutoff = Date.now() - days * 86400000;
   const byDay = new Map();
@@ -248,12 +252,49 @@ function graphTab(all, ctx) {
     h('p', { class: 'muted small' }, t('e1rmExplain')));
 }
 
+// Bodyweight exercises: progress is measured in reps (and extra weight).
+let bwMetric = 'reps';
+function bwGraphTab(all, ctx) {
+  const days = { '3m': 92, '1y': 366, all: Infinity }[graphRange];
+  const cutoff = Date.now() - days * 86400000;
+  const byDay = new Map();
+  for (const s of all) { if (!byDay.has(s.date)) byDay.set(s.date, []); byDay.get(s.date).push(s); }
+  const value = list => bwMetric === 'reps' ? Math.max(...list.map(s => s.reps)) : bwMetric === 'total' ? list.reduce((a, s) => a + s.reps, 0) : list.reduce((a, s) => a + data.setVolume(s), 0);
+  const pts = [...byDay].map(([d, list]) => ({ x: parseISODate(d).getTime(), y: value(list) })).filter(p => p.x >= cutoff);
+  const isKg = bwMetric === 'vol';
+  const chart = pts.length
+    ? lineChart({ series: [{ points: pts, color: 'var(--accent)' }], fmtY: v => fmtNum(v, 0), fmtVal: v => isKg ? fmtNum(Math.round(v)) + ' kg' : t('nReps', { n: Math.round(v) }), fmtX: x => fmtShortY(toISODate(new Date(x))) })
+    : h('p', { class: 'muted pad' }, t('noDataRange'));
+  let most = all[0];
+  for (const x of all) if (x.reps > most.reps) most = x;
+  let bestDay = null;
+  for (const [d, list] of byDay) { const n = list.reduce((a, x) => a + x.reps, 0); if (!bestDay || n > bestDay.n) bestDay = { d, n }; }
+  const byExtra = new Map();
+  for (const x of all) { const k = Math.round(x.weight * 100); const cur = byExtra.get(k); if (!cur || x.reps > cur.reps) byExtra.set(k, x); }
+  const recRow = (label, val, date) => h('div', { class: 'rec-row' }, h('span', { class: 'muted' }, label), h('span', { class: 'rec-val' }, val), h('span', { class: 'muted small' }, fmtShortY(date)));
+  return h('div', { class: 'content' },
+    seg([['reps', t('maxReps')], ['total', t('totalReps')], ['vol', t('volume')]], bwMetric, v => { bwMetric = v; ctx.refresh(); }),
+    h('div', { class: 'chart-wrap' }, chart),
+    seg([['3m', t('range3m')], ['1y', t('range1y')], ['all', t('rangeAll')]], graphRange, v => { graphRange = v; ctx.refresh(); }),
+    h('h3', { class: 'section' }, t('records')),
+    h('div', { class: 'card' },
+      recRow(t('mostReps'), data.setLabel(most), most.date),
+      recRow(t('bestDayReps'), t('nReps', { n: bestDay.n }), bestDay.d)),
+    byExtra.size > 1 && h('h3', { class: 'section' }, t('repsByExtra')),
+    byExtra.size > 1 && h('div', { class: 'card' }, h('table', { class: 'table' },
+      h('thead', {}, h('tr', {}, h('th', {}, t('extraShort')), h('th', {}, t('bestReps')), h('th', {}, t('date')))),
+      h('tbody', {}, [...byExtra.values()].sort((a, b) => b.weight - a.weight).map(x => h('tr', {},
+        h('td', {}, x.weight ? (x.weight > 0 ? '+' : '−') + fmtW(Math.abs(x.weight)) : t('bwShort')), h('td', {}, x.reps), h('td', { class: 'muted' }, fmtShortY(x.date))))))),
+    h('p', { class: 'muted small' }, t('bwExplain')));
+}
+
 // ---------------------------------------------------------------- menu
 async function menu(ex, ctx) {
   const restNow = ex.rest != null ? fmtRest(ex.rest) : t('restDefault', { v: fmtRest(data.settings.rest) });
   const v = await chooser(data.exName(ex), [
     { label: t('restTimer'), sub: restNow, value: 'rest' },
     { label: t('exerciseNote'), sub: ex.note || t('addNote'), value: 'note' },
+    { label: t('typeBodyweight'), sub: data.isBW(ex) ? t('bwOnSub') : t('bwOffSub'), value: 'bw', selected: data.isBW(ex) },
     { label: t('editExercise'), value: 'edit' },
   ]);
   if (v === 'rest') {
@@ -268,5 +309,6 @@ async function menu(ex, ctx) {
     toast(t('saved'));
     ctx.refresh();
   } else if (v === 'note') editNote(ex, ctx);
+  else if (v === 'bw') { if (await setBodyweight(ex, !data.isBW(ex))) ctx.refresh(); }
   else if (v === 'edit') { if (await exerciseForm(ex)) ctx.refresh(); }
 }

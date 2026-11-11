@@ -14,6 +14,7 @@ import * as progress from './views/progress.js';
 import * as more from './views/more.js';
 import * as checkins from './views/checkins.js';
 import * as library from './views/library.js';
+import * as addRoutine from './views/addroutine.js';
 
 // [pattern, render, bottom-nav tab (null = hide nav for focus)]
 const ROUTES = [
@@ -30,6 +31,7 @@ const ROUTES = [
   [/^\/checkins$/, checkins.render, null],
   [/^\/library(?:\/([^/]+))?$/, library.render, null],
   [/^\/import-report$/, more.renderReport, null],
+  [/^\/add\/([A-Za-z0-9_-]+)$/, addRoutine.render, null],
 ];
 const TABS = [['workout', '/', 'dumbbell'], ['calendar', '/calendar', 'calendar'], ['routines', '/routines', 'clipboard'], ['progress', '/progress', 'chart'], ['more', '/more', 'menu']];
 
