@@ -69,11 +69,11 @@ export async function renderEdit([id], ctx) {
             h('button', { class: 'icon-btn small', 'aria-label': t('moveUp'), disabled: i === 0, onclick: () => move(i, -1) }, icon('up', 20)),
             h('button', { class: 'icon-btn small', 'aria-label': t('moveDown'), disabled: i === items.length - 1, onclick: () => move(i, 1) }, icon('down', 20)),
             h('button', { class: 'icon-btn small', 'aria-label': t('remove'), onclick: () => save(items.filter((_, j) => j !== i)) }, icon('close', 20))),
-          h('div', { style: { display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap', marginTop: '8px' } },
-            h('span', { class: 'small muted' }, t('setsWord')),
-            miniStepper(e.sets, { min: 1, max: 20, label: t('setsWord'), onchange: v => patch(i, { sets: v }) }),
-            h('span', { class: 'small muted' }, t('reps')),
-            miniStepper(e.reps || 0, { min: 0, max: 100, empty: t('auto'), label: t('reps'), onchange: v => patch(i, { reps: v || undefined }) })));
+          h('div', { class: 'plan-row' },
+            h('div', { class: 'plan-cell' }, h('span', { class: 'field-label' }, t('setsWord')),
+              miniStepper(e.sets, { min: 1, max: 20, label: t('setsWord'), onchange: v => patch(i, { sets: v }) })),
+            h('div', { class: 'plan-cell' }, h('span', { class: 'field-label' }, t('reps')),
+              miniStepper(e.reps || 0, { min: 0, max: 100, empty: t('auto'), label: t('reps'), onchange: v => patch(i, { reps: v || undefined }) }))));
       }),
       !items.length && h('div', { class: 'empty' }, t('noExercisesYet')),
       h('button', { class: 'btn big', onclick: () => { ctx.state.pickFor = { routineId: r.id }; ctx.go('/pick'); } }, icon('plus'), t('addExercise')),

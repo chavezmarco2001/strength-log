@@ -31,7 +31,8 @@ export async function render(_, ctx) {
   const counts = new Map();
   for (const s of sets) if (s.date >= since) counts.set(s.exerciseId, (counts.get(s.exerciseId) || 0) + 1);
   const top = [...counts].filter(([id]) => data.getExercise(id)).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  const records = recentRecords(sets, 6).filter(r => data.getExercise(r.set.exerciseId));
+  const seenEx = new Set();
+  const records = recentRecords(sets, 200).filter(r => data.getExercise(r.set.exerciseId) && !seenEx.has(r.set.exerciseId) && seenEx.add(r.set.exerciseId)).slice(0, 6);
   const ci = weeklyCheckins(sessions).at(-1);
 
   const tile = (value, label, hot) => h('div', { class: 'tile' + (hot ? ' hot' : '') }, h('b', {}, value), h('span', {}, label));

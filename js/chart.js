@@ -84,15 +84,15 @@ export function barChart({ bars, fmtY = String, fmtVal = fmtY, color = 'var(--ac
   const readout = svg('text', { x: L, y: 15, class: 'readout' });
   const rects = bars.map((b, i) => {
     const x = L + i * bw + bw * 0.18, w = bw * 0.64, y = sy(b.value);
-    const r = svg('rect', { x, y, width: w, height: Math.max(0, H - B - y), class: 'bar', style: `fill:${color};opacity:${i === bars.length - 1 ? 1 : 0.55}` });
+    const r = svg('rect', { x, y, width: w, height: Math.max(0, H - B - y), class: 'bar', style: `fill:${color}` });
     root.append(r);
-    if (bars.length <= 12 || i % 2 === bars.length % 2) root.append(svg('text', { x: x + w / 2, y: H - 6, 'text-anchor': 'middle', class: 'axis' }, b.label));
+    if (bars.length <= 6 || (bars.length - 1 - i) % 2 === 0) root.append(svg('text', { x: x + w / 2, y: H - 6, 'text-anchor': 'middle', class: 'axis' }, b.label));
     return r;
   });
   root.append(readout);
   const show = i => {
     readout.textContent = `${bars[i].title || bars[i].label}: ${fmtVal(bars[i].value)}`;
-    rects.forEach((r, j) => (r.style.opacity = j === i ? 1 : 0.45));
+    rects.forEach((r, j) => (r.style.fill = j === i ? 'var(--accent2)' : color));
   };
   root.addEventListener('pointerdown', e => {
     const rr = root.getBoundingClientRect();
