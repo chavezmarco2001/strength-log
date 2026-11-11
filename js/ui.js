@@ -88,6 +88,24 @@ export function miniStepper(value, { min = 0, max = 99, unit = '', empty = '–'
     h('button', { 'aria-label': '+', disabled: value >= max, onclick: () => onchange(Math.min(max, value + 1)) }, icon('plus', 18)));
 }
 
+/**
+ * Press-and-hold on `el` runs fn (scrolling or moving the finger cancels it). The click that
+ * follows a long press is swallowed so it doesn't also open/tick anything.
+ */
+export function onLongPress(el, fn, ms = 450) {
+  let timer = null, x = 0, y = 0, fired = false;
+  const cancel = () => { clearTimeout(timer); timer = null; };
+  el.addEventListener('pointerdown', e => {
+    fired = false; x = e.clientX; y = e.clientY; cancel();
+    timer = setTimeout(() => { timer = null; fired = true; fn(); }, ms);
+  });
+  el.addEventListener('pointermove', e => { if (timer && Math.hypot(e.clientX - x, e.clientY - y) > 10) cancel(); });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) el.addEventListener(ev, cancel);
+  el.addEventListener('click', e => { if (fired) { fired = false; e.stopPropagation(); e.preventDefault(); } }, true);
+  el.addEventListener('contextmenu', e => e.preventDefault());
+  return el;
+}
+
 /** Short vibration for confirmations (respects the vibration setting passed in). */
 export const haptic = (on, ms = 15) => { if (on) navigator.vibrate?.(ms); };
 

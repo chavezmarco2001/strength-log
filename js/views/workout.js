@@ -1,5 +1,5 @@
 // Main screen: the workout of one day — week strip, summary, exercises with ✓ sets.
-import { h, icon, chooser, formDialog, confirmDialog, toast, sheet } from '../ui.js';
+import { h, icon, chooser, formDialog, confirmDialog, toast, sheet, onLongPress, haptic } from '../ui.js';
 import * as data from '../data.js';
 import { t, fmtNum, fmtDayTitle, fmtLong, fmtShort, fmtDate } from '../i18n.js';
 import { toISODate, addDays, weekStart } from '../util.js';
@@ -9,8 +9,11 @@ import { toggleDone, addPlannedSet } from '../actions.js';
 import { setTable, catDots, groupByExercise } from './components.js';
 import { focusSet } from './log.js';
 
+let reorderFor = null;   // date being reordered (press-and-hold on an exercise)
+
 export async function render(_, ctx) {
   const date = ctx.state.date;
+  if (reorderFor && reorderFor !== date) reorderFor = null;
   const today = toISODate();
   const w0 = weekStart(date);
   const [sets, session, weekSets] = await Promise.all([data.setsForDate(date), data.getSession(date), data.setsInRange(w0, addDays(w0, 6))]);
@@ -104,9 +107,11 @@ export async function render(_, ctx) {
   const exMenu = async (id, list) => {
     const v = await chooser(data.exName(data.getExercise(id)), [
       { label: t('openExercise'), value: 'open' },
+      ...(ids.length > 1 ? [{ label: t('reorderExercises'), sub: t('reorderHint'), value: 'reorder' }] : []),
       { label: t('removeFromWorkout'), sub: t('nSets', { n: list.length }), value: 'remove', danger: true },
     ]);
     if (v === 'open') ctx.go('/ex/' + id);
+    if (v === 'reorder') { reorderFor = date; ctx.refresh(); }
     if (v === 'remove') {
       const removed = await data.removeExerciseFromDay(id, date);
       ctx.refresh();
@@ -160,7 +165,7 @@ export async function render(_, ctx) {
     const list = groups.get(id);
     const cat = data.getCategory(ex.categoryId);
     const nDone = list.filter(data.isDone).length;
-    return h('div', { class: 'card ex-card', style: { '--c': cat?.color || 'var(--accent)' } },
+    return onLongPress(h('div', { class: 'card ex-card', style: { '--c': cat?.color || 'var(--accent)' } },
       h('div', { class: 'ex-top' },
         h('button', { class: 'ex-head', onclick: () => ctx.go('/ex/' + id) },
           h('div', { class: 'card-title' }, data.exName(ex), h('div', { class: 'tag', style: { '--c': cat?.color } }, cat ? data.catName(cat) : '')),
@@ -171,16 +176,20 @@ export async function render(_, ctx) {
         onTick: tick,
         onRow: s => { focusSet(s.id); ctx.go('/ex/' + id); },
       }),
-      h('button', { class: 'add-set', onclick: async () => { await addPlannedSet(id, date, sets); ctx.refresh(); } }, icon('plus', 18), t('addSet')));
+      h('button', { class: 'add-set', onclick: async () => { await addPlannedSet(id, date, sets); ctx.refresh(); } }, icon('plus', 18), t('addSet'))),
+    () => { if (ids.length > 1) { haptic(data.settings.vibrate, 30); reorderFor = date; ctx.refresh(); } });
   });
 
-  const v = k => (session?.[k] ? session[k] + '/5' : '–');
+  const v = k => (session?.[k] ? session[k] + '/' + data.CHECKIN_SCALE : '–');
   const summary = session?.finishedAt && h('button', { class: 'card', onclick: finish },
     h('div', { class: 'card-title' }, '✓ ' + t('workoutFinished')),
     h('div', { class: 'muted small' }, `${t('mood')} ${v('mood')} · ${t('motivation')} ${v('motivation')} · ${t('satisfaction')} ${v('satisfaction')}`),
+    session.tags?.length > 0 && h('div', { class: 'tag-list' }, session.tags.map(k => h('span', {}, t('tag_' + k)))),
     session.note && h('div', { class: 'note' }, '“' + session.note + '”'));
 
   const addExercise = () => { ctx.state.pickFor = null; ctx.go('/pick'); };
+  if (reorderFor === date && ids.length > 1) return h('div', { class: 'screen' }, header, week, reorderView(ids, date, ctx));
+
   const body = h('div', { class: 'content' },
     backupDue && h('div', { class: 'banner warn' },
       h('div', {}, backupDue === 'never' ? t('backupNever') : t('backupOld', { n: backupDue })),
@@ -209,4 +218,65 @@ async function pickDate(title, current) {
         h('button', { class: 'btn big', onclick: () => close(null) }, t('cancel')),
         h('button', { class: 'btn big primary', onclick: () => close(input.value && input.value !== current ? input.value : null) }, t('ok'))));
   }).then(v2 => v2 || null);
+}
+
+/** Reorder mode: drag an exercise by its handle (≡) or use the arrows; changes save at once. */
+function reorderView(ids, date, ctx) {
+  const order = [...ids];
+  const list = h('div', { class: 'reorder-list' });
+  const save = () => data.reorderDay(date, order);
+  const move = async (i, d) => { [order[i], order[i + d]] = [order[i + d], order[i]]; draw(); await save(); };
+
+  const row = (id, i) => {
+    const ex = data.getExercise(id);
+    const cat = data.getCategory(ex.categoryId);
+    const grip = h('span', { class: 'grip', 'aria-label': t('dragToMove') }, icon('menu', 22));
+    const el = h('div', { class: 'reorder-row', style: { '--c': cat?.color || 'var(--accent)' } },
+      grip,
+      h('div', { class: 'row-main' }, h('div', { class: 'card-title' }, data.exName(ex)), h('div', { class: 'muted small' }, cat ? data.catName(cat) : '')),
+      h('button', { class: 'icon-btn', 'aria-label': t('moveUp'), disabled: i === 0, onclick: () => move(i, -1) }, icon('up')),
+      h('button', { class: 'icon-btn', 'aria-label': t('moveDown'), disabled: i === order.length - 1, onclick: () => move(i, 1) }, icon('down')));
+    // drag by the handle (touch-action: none on .grip, so the page doesn't scroll)
+    grip.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      try { grip.setPointerCapture(e.pointerId); } catch { /* moves are also followed on window */ }
+      const pid = e.pointerId;
+      const rows = [...list.children];
+      const mids = rows.map(r => { const b = r.getBoundingClientRect(); return b.top + b.height / 2; });
+      const startY = e.clientY, h0 = el.getBoundingClientRect().height + 8;
+      let target = i;
+      el.classList.add('dragging');
+      const onMove = ev => {
+        if (ev.pointerId !== pid) return;
+        const dy = ev.clientY - startY;
+        el.style.transform = `translateY(${dy}px)`;
+        const center = mids[i] + dy;
+        target = mids.filter((m, j) => j !== i && m < center).length;
+        rows.forEach((r, j) => {
+          if (j === i) return;
+          const shift = j > i && j <= target ? -h0 : j < i && j >= target ? h0 : 0;
+          r.style.transform = shift ? `translateY(${shift}px)` : '';
+        });
+      };
+      const onUp = async ev => {
+        if (ev.pointerId !== pid) return;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+        rows.forEach(r => (r.style.transform = ''));
+        el.classList.remove('dragging');
+        if (target !== i) { const [moved] = order.splice(i, 1); order.splice(target, 0, moved); draw(); haptic(data.settings.vibrate, 15); await save(); }
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+    });
+    return el;
+  };
+  const draw = () => list.replaceChildren(...order.map(row));
+  draw();
+  return h('div', { class: 'content' },
+    h('div', { class: 'banner', style: { background: 'var(--surface)' } }, icon('menu', 20), h('div', {}, t('reorderBanner'))),
+    list,
+    h('button', { class: 'btn primary big', onclick: () => { reorderFor = null; ctx.refresh(); } }, icon('check'), t('done')));
 }

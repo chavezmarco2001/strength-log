@@ -131,7 +131,7 @@ const wake = {
 function registerSW() {
   if (!('serviceWorker' in navigator)) return;
   // During local development the cache would hide changes; opt in with ?sw
-  const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
+  const isLocal = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
   if (isLocal && !new URLSearchParams(location.search).has('sw')) {
     navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister()));
     return;

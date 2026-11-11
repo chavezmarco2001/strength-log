@@ -5,7 +5,7 @@
 //   exercises  { id, name, nameEs?, categoryId, rest?, note?, type? }   rest = seconds; type 'bodyweight' → weight = extra kg
 //   sets       { id, exerciseId, date:'YYYY-MM-DD', weight (kg), reps, t (ordering ms), comment?, done? }
 //              done === false → planned (not yet completed). Missing = completed (v1 data, imports).
-//   sessions   { date, routineId?, mood?, motivation?, satisfaction?, note?, finishedAt? }
+//   sessions   { date, routineId?, mood?, motivation?, satisfaction? (1–10, scale: 10), tags?: [key], note?, finishedAt? }
 //   routines   { id, name, exercises: [{ id, sets, reps? }], items: [exerciseId] }   items = ids, kept in sync (v1)
 //              group?, order?   → several routines with the same group = one routine with days
 //   bodyweight { date, kg }
@@ -14,7 +14,7 @@ import * as db from './db.js';
 import { SEED_CATEGORIES, SEED_EXERCISES, PALETTE } from './seed.js';
 import { uid, norm, parseISODate, toISODate, wkey } from './util.js';
 import { getLang, t, fmtNum, fmtSet } from './i18n.js';
-import { checkPR } from './stats.js';
+import { checkPR, CHECKIN_KEYS } from './stats.js';
 import { toCSV } from './csv.js';
 import { TEMPLATE_RENAMES } from './templates.js';
 
@@ -39,8 +39,21 @@ export async function init() {
   if (!settings.seeded) await seed();
   await reload();
   await renameTemplateDays();
+  await migrateCheckinScale();
   await bodyweights();
   anySets = (await db.count('sets')) > 0;
+}
+
+/** Check-ins used a 1–5 scale before v2.4; they are now 1–10. Old answers are doubled once. */
+export const CHECKIN_SCALE = 10;
+async function migrateCheckinScale() {
+  const old = (await db.getAll('sessions')).filter(s => s.scale !== CHECKIN_SCALE && CHECKIN_KEYS.some(k => s[k]));
+  if (!old.length) return;
+  await db.transact(['sessions'], st => old.forEach(s => {
+    const o = { ...s, scale: CHECKIN_SCALE };
+    for (const k of CHECKIN_KEYS) if (o[k]) o[k] = Math.min(CHECKIN_SCALE, o[k] * 2);
+    st.sessions.put(o);
+  }));
 }
 
 /** Renames days of routines added from older template versions (e.g. Spanish day names). */
@@ -246,6 +259,17 @@ export async function removeExerciseFromDay(exerciseId, date) {
   return sets;
 }
 export async function restoreSets(sets) { await db.transact(['sets'], st => sets.forEach(s => st.sets.put(s))); }
+
+/**
+ * Puts a day's exercises in the given order. The day's own timestamps are reused in the new
+ * order, so the workout duration and the order of sets inside each exercise stay the same.
+ */
+export async function reorderDay(date, exerciseIds) {
+  const sets = await setsForDate(date);
+  const times = sets.map(s => s.t || 0).sort((a, b) => a - b);
+  const ordered = [...exerciseIds.flatMap(id => sets.filter(s => s.exerciseId === id)), ...sets.filter(s => !exerciseIds.includes(s.exerciseId))];
+  await db.transact(['sets'], st => ordered.forEach((s, i) => st.sets.put({ ...s, t: times[i] })));
+}
 
 /** Days with completed sets, newest first: [{ date, sets, exerciseIds }]. */
 export async function workoutDays(limit = Infinity) {
@@ -543,6 +567,7 @@ export async function restoreAll(o) {
   Object.assign(settings, DEFAULTS, { seeded: true });
   for (const r of o.settings || []) settings[r.k] = r.v;
   await reload();
+  await migrateCheckinScale();
   await bodyweights();
   anySets = o.sets.length > 0;
 }
@@ -558,9 +583,9 @@ export async function exportCSV() {
 }
 
 export async function exportCheckinsCSV() {
-  const rows = [['Date', 'Mood', 'Motivation', 'Satisfaction', 'Note']];
-  const list = (await allSessions()).filter(s => s.mood || s.motivation || s.satisfaction || s.note).sort((a, b) => (a.date < b.date ? -1 : 1));
-  for (const s of list) rows.push([s.date, s.mood ?? '', s.motivation ?? '', s.satisfaction ?? '', s.note ?? '']);
+  const rows = [['Date', 'Mood (1-10)', 'Motivation (1-10)', 'Satisfaction (1-10)', 'Tags', 'Note']];
+  const list = (await allSessions()).filter(s => s.mood || s.motivation || s.satisfaction || s.note || s.tags?.length).sort((a, b) => (a.date < b.date ? -1 : 1));
+  for (const s of list) rows.push([s.date, s.mood ?? '', s.motivation ?? '', s.satisfaction ?? '', (s.tags || []).map(k => t('tag_' + k)).join('; '), s.note ?? '']);
   return toCSV(rows);
 }
 

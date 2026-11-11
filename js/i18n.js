@@ -5,6 +5,29 @@ const LOCALES = { en: 'en-US', es: 'es-419' };
 
 export const dict = {
   en: {
+    // ---- v2.4 ----
+    q_tags: "How did it go?",
+    tagsHint: "Tap all that apply — no typing needed.",
+    addNoteOptional: "Add a note (optional)",
+    topTags: "Most common (last 4 weeks)",
+    tag_strong: "Felt strong",
+    tag_energetic: "Lots of energy",
+    tag_focused: "Focused",
+    tag_goodPump: "Good pump",
+    tag_newPR: "New PR",
+    tag_easy: "Felt easy",
+    tag_hard: "Tough session",
+    tag_tired: "Tired",
+    tag_lowEnergy: "Low energy",
+    tag_poorSleep: "Slept badly",
+    tag_sore: "Sore",
+    tag_pain: "Pain / discomfort",
+    tag_rushed: "Short on time",
+    tag_distracted: "Distracted",
+    reorderExercises: "Reorder exercises",
+    reorderHint: "Or press and hold any exercise",
+    reorderBanner: "Drag ≡ or use the arrows to change the order.",
+    dragToMove: "Drag to move",
     // ---- v2.3 ----
     moveWorkoutTo: "Move workout to…",
     copyWorkoutTo: "Copy workout to…",
@@ -215,7 +238,7 @@ export const dict = {
     skip: 'Skip', skipAll: 'Skip all',
     mood: 'Mood', motivation: 'Motivation', satisfaction: 'Satisfaction',
     checkins: 'Check-ins by week', checkinsSub: 'Mood, motivation and satisfaction',
-    checkinsExplain: 'Weekly averages of your post-workout answers (1–5). Tap the chart to read a week.',
+    checkinsExplain: 'Weekly averages of your post-workout answers (1–10). Tap the chart to read a week.',
     noCheckins: 'No check-ins yet. Tap “Finish workout” after training to answer them.',
     week: 'Week', weekOf: 'Week of {date}', notes: 'Notes',
 
@@ -281,6 +304,29 @@ export const dict = {
   },
 
   es: {
+    // ---- v2.4 ----
+    q_tags: "¿Cómo te fue?",
+    tagsHint: "Toca todas las que apliquen, sin escribir.",
+    addNoteOptional: "Agregar nota (opcional)",
+    topTags: "Más frecuentes (últimas 4 semanas)",
+    tag_strong: "Me sentí fuerte",
+    tag_energetic: "Mucha energía",
+    tag_focused: "Buena concentración",
+    tag_goodPump: "Buen bombeo",
+    tag_newPR: "Nuevo récord",
+    tag_easy: "Se sintió fácil",
+    tag_hard: "Sesión dura",
+    tag_tired: "Cansancio",
+    tag_lowEnergy: "Poca energía",
+    tag_poorSleep: "Dormí mal",
+    tag_sore: "Dolor muscular",
+    tag_pain: "Dolor / molestia",
+    tag_rushed: "Poco tiempo",
+    tag_distracted: "Distracciones",
+    reorderExercises: "Ordenar ejercicios",
+    reorderHint: "O mantén apretado cualquier ejercicio",
+    reorderBanner: "Arrastra ≡ o usa las flechas para cambiar el orden.",
+    dragToMove: "Arrastra para mover",
     // ---- v2.3 ----
     moveWorkoutTo: "Mover entreno a…",
     copyWorkoutTo: "Copiar entreno a…",
@@ -484,7 +530,7 @@ export const dict = {
     skip: 'Saltar', skipAll: 'Saltar todo',
     mood: 'Ánimo', motivation: 'Motivación', satisfaction: 'Satisfacción',
     checkins: 'Preguntas por semana', checkinsSub: 'Ánimo, motivación y satisfacción',
-    checkinsExplain: 'Promedio semanal de tus respuestas post-entreno (1–5). Toca el gráfico para ver una semana.',
+    checkinsExplain: 'Promedio semanal de tus respuestas post-entreno (1–10). Toca el gráfico para ver una semana.',
     noCheckins: 'Aún no hay respuestas. Toca «Terminar entrenamiento» al final para contestarlas.',
     week: 'Semana', weekOf: 'Semana del {date}', notes: 'Notas',
 

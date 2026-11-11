@@ -1,6 +1,6 @@
 // Service worker: keeps the whole app cached so it opens without internet.
 // IMPORTANT: bump VERSION whenever any file changes, or phones keep the old copy.
-const VERSION = '2.3.0';
+const VERSION = '2.4.0';
 const CACHE = 'strength-log-' + VERSION;
 const ASSETS = [
   './',

@@ -83,6 +83,7 @@ async function dayDetail(date, ctx) {
         h('div', { class: 'card-title' }, ex ? data.exName(ex) : '?'),
         h('div', { class: 'chips', style: { marginTop: '6px' } }, list.map(s => h('span', { class: 'chip' }, data.setLabel(s)))));
     }),
+    session?.tags?.length > 0 && h('div', { class: 'tag-list' }, session.tags.map(k => h('span', {}, t('tag_' + k)))),
     session?.note && h('div', { class: 'card note' }, '“' + session.note + '”'),
     h('div', { class: 'btn-row' },
       h('button', { class: 'btn', onclick: open }, icon('dumbbell'), t('openDay')),

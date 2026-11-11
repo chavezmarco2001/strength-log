@@ -115,6 +115,7 @@ test('every translation key used in the code exists in English and Spanish', () 
   for (const p of ['nav_workout', 'nav_calendar', 'nav_routines', 'nav_progress', 'nav_more', 'tab_track', 'tab_history', 'tab_graph', 'accent_blaze', 'accent_electric', 'accent_lime', 'accent_violet', 'markDone', 'markNotDone']) used.add(p);
   for (const k of ['mood', 'motivation', 'satisfaction']) ['q_', 'low_', 'high_'].forEach(p => used.add(p + k));
   for (const r of ['noExercise', 'badDate', 'cardio', 'noReps', 'badReps', 'badWeight', 'negativeWeight', 'notComplete']) used.add('skip_' + r);
+  for (const k of ['strong', 'energetic', 'focused', 'goodPump', 'newPR', 'easy', 'hard', 'tired', 'lowEnergy', 'poorSleep', 'sore', 'pain', 'rushed', 'distracted']) used.add('tag_' + k);
   const missing = [...used].filter(k => !dict.en[k] || !dict.es[k]);
   assert.deepEqual(missing, []);
   const extraEs = Object.keys(dict.es).filter(k => !dict.en[k]);
