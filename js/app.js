@@ -1,14 +1,16 @@
 // App entry: routing, bottom navigation, screen wake lock, service worker.
 import * as data from './data.js';
 import { t, setLang } from './i18n.js';
-import { h, icon, toast, applyTheme, closeAllSheets } from './ui.js';
+import { h, icon, toast, applyTheme, applyAccent, closeAllSheets } from './ui.js';
 import { toISODate } from './util.js';
 import * as timer from './timer.js';
 import * as workout from './views/workout.js';
 import * as picker from './views/picker.js';
 import * as log from './views/log.js';
 import * as historyView from './views/history.js';
+import * as calendar from './views/calendar.js';
 import * as routines from './views/routines.js';
+import * as progress from './views/progress.js';
 import * as more from './views/more.js';
 import * as checkins from './views/checkins.js';
 import * as library from './views/library.js';
@@ -18,15 +20,18 @@ const ROUTES = [
   [/^\/$/, workout.render, 'workout'],
   [/^\/pick(?:\/([^/]+))?$/, picker.render, null],
   [/^\/ex\/([^/]+)(?:\/(history|graph))?$/, log.render, null],
-  [/^\/history$/, historyView.render, 'history'],
+  [/^\/calendar$/, calendar.render, 'calendar'],
+  [/^\/history$/, historyView.render, 'calendar'],
   [/^\/routines$/, routines.renderList, 'routines'],
   [/^\/routine\/([^/]+)$/, routines.renderEdit, null],
+  [/^\/progress$/, progress.render, 'progress'],
+  [/^\/bodyweight$/, progress.renderBodyweight, null],
   [/^\/more$/, more.render, 'more'],
   [/^\/checkins$/, checkins.render, null],
   [/^\/library(?:\/([^/]+))?$/, library.render, null],
   [/^\/import-report$/, more.renderReport, null],
 ];
-const TABS = [['workout', '/', 'dumbbell'], ['history', '/history', 'calendar'], ['routines', '/routines', 'clipboard'], ['more', '/more', 'menu']];
+const TABS = [['workout', '/', 'dumbbell'], ['calendar', '/calendar', 'calendar'], ['routines', '/routines', 'clipboard'], ['progress', '/progress', 'chart'], ['more', '/more', 'menu']];
 
 const view = document.getElementById('view');
 const nav = document.getElementById('nav');
@@ -107,7 +112,7 @@ const wake = {
   lock: null, busy: false,
   async update() {
     if (this.busy || !('wakeLock' in navigator)) return;
-    const want = data.settings.wake && document.visibilityState === 'visible' && (currentPath().startsWith('/ex/') || timer.running());
+    const want = data.settings.wake && document.visibilityState === 'visible' && (currentPath() === '/' || currentPath().startsWith('/ex/') || timer.running());
     this.busy = true;
     try {
       if (want && !this.lock) {
@@ -150,6 +155,7 @@ async function boot() {
   }
   setLang(data.settings.lang);
   applyTheme(data.settings.theme);
+  applyAccent(data.settings.accent);
   matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => applyTheme(data.settings.theme));
   renderNav();
   timer.init();

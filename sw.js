@@ -1,6 +1,6 @@
 // Service worker: keeps the whole app cached so it opens without internet.
 // IMPORTANT: bump VERSION whenever any file changes, or phones keep the old copy.
-const VERSION = '1.1.0';
+const VERSION = '2.0.0';
 const CACHE = 'strength-log-' + VERSION;
 const ASSETS = [
   './',
@@ -11,7 +11,10 @@ const ASSETS = [
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png',
+  './fonts/barlow-condensed-600.woff2',
+  './fonts/barlow-condensed-800.woff2',
   './js/app.js',
+  './js/actions.js',
   './js/chart.js',
   './js/checkin.js',
   './js/csv.js',
@@ -27,12 +30,15 @@ const ASSETS = [
   './js/ui.js',
   './js/util.js',
   './js/views/checkins.js',
+  './js/views/calendar.js',
+  './js/views/components.js',
   './js/views/forms.js',
   './js/views/history.js',
   './js/views/library.js',
   './js/views/log.js',
   './js/views/more.js',
   './js/views/picker.js',
+  './js/views/progress.js',
   './js/views/routines.js',
   './js/views/workout.js',
 ];

@@ -11,7 +11,7 @@ let query = '';
 export async function render([catId], ctx) {
   const pickFor = ctx.state.pickFor;
   const cat = catId ? data.getCategory(catId) : null;
-  const recent = !cat && !pickFor ? await data.recentExercises(6) : [];
+  const recent = !cat && !pickFor?.routineId ? await data.recentExercises(6) : [];
 
   async function choose(exId) {
     query = '';
@@ -19,6 +19,9 @@ export async function render([catId], ctx) {
       await data.addToRoutine(pickFor.routineId, exId);
       ctx.state.pickFor = null;
       ctx.back('/routine/' + pickFor.routineId);
+    } else if (pickFor?.mode === 'progress') {
+      ctx.state.pickFor = null;
+      ctx.go('/ex/' + exId + '/graph', { replace: true });
     } else ctx.go('/ex/' + exId, { replace: true });
   }
 
@@ -64,8 +67,8 @@ export async function render([catId], ctx) {
 
   return h('div', { class: 'screen' },
     topbar({
-      title: cat ? data.catName(cat) : pickFor ? t('addToRoutine') : t('addExercise'),
-      back: () => { if (cat) ctx.go('/pick', { replace: true }); else { query = ''; ctx.back(pickFor ? '/routine/' + pickFor.routineId : '/'); } },
+      title: cat ? data.catName(cat) : pickFor?.routineId ? t('addToRoutine') : pickFor?.mode === 'progress' ? t('allExercises') : t('addExercise'),
+      back: () => { if (cat) ctx.go('/pick', { replace: true }); else { query = ''; ctx.back(pickFor?.routineId ? '/routine/' + pickFor.routineId : pickFor?.mode === 'progress' ? '/progress' : '/'); } },
     }),
     h('div', { class: 'content' }, search, list));
 }

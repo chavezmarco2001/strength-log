@@ -52,6 +52,15 @@ const ICONS = {
   clipboard: 'M9 4h6v3H9zM7 5H5v16h14V5h-2M9 12h6M9 16h6',
   menu: 'M4 7h16M4 12h16M4 17h16',
   search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-4.5-4.5',
+  chart: 'M4 20V4M4 20h16M8 16l4-5 3 3 5-7',
+  repeat: 'M17 2l3 3-3 3M20 5H8a4 4 0 0 0-4 4v1M7 22l-3-3 3-3M4 19h12a4 4 0 0 0 4-4v-1',
+  play: 'M7 4l13 8-13 8z',
+  flame: 'M12 22c4 0 7-3 7-7 0-5-5-7-5-12-3 2-5 5-5 8-1-1-2-2-2-4-2 2-2 5-2 8 0 4 3 7 7 7z',
+  scale: 'M5 4h14l2 16H3zM12 8v4M9 9l1 1M15 9l-1 1',
+  note: 'M5 3h10l4 4v14H5zM14 3v5h5M9 13h6M9 17h4',
+  plates: 'M3 9v6M6 6v12M18 6v12M21 9v6M6 12h12',
+  gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
+  list: 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01',
 };
 export function icon(name, size = 24) {
   return svg('svg', { viewBox: '0 0 24 24', width: size, height: size, fill: 'none', stroke: 'currentColor', 'stroke-width': name === 'more' ? 3.2 : 2.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' },
@@ -70,6 +79,17 @@ export function seg(options, value, onpick) {
   return h('div', { class: 'seg', role: 'radiogroup' }, options.map(([v, label]) =>
     h('button', { class: v === value ? 'active' : '', role: 'radio', 'aria-checked': String(v === value), onclick: () => v !== value && onpick(v) }, label)));
 }
+
+/** Small − value + control (routines: sets / reps). */
+export function miniStepper(value, { min = 0, max = 99, unit = '', empty = '–', onchange, label = '' }) {
+  return h('span', { class: 'mini-step', role: 'group', 'aria-label': label },
+    h('button', { 'aria-label': '−', disabled: value <= min, onclick: () => onchange(Math.max(min, value - 1)) }, icon('minus', 18)),
+    h('b', {}, value > 0 || min > 0 ? String(value) : empty), unit && h('small', {}, unit),
+    h('button', { 'aria-label': '+', disabled: value >= max, onclick: () => onchange(Math.min(max, value + 1)) }, icon('plus', 18)));
+}
+
+/** Short vibration for confirmations (respects the vibration setting passed in). */
+export const haptic = (on, ms = 15) => { if (on) navigator.vibrate?.(ms); };
 
 /** On/off row. */
 export function toggleRow(label, on, onchange, sub) {
@@ -155,7 +175,7 @@ export function formDialog(title, fields, okLabel = t('save')) {
       let input;
       if (f.type === 'select') input = h('select', { class: 'input' }, f.options.map(o => h('option', { value: o.value, selected: o.value === f.value }, o.label)));
       else if (f.type === 'textarea') { input = h('textarea', { class: 'input', rows: 3, maxlength: f.maxlength }); input.value = f.value ?? ''; }
-      else input = h('input', { class: 'input', type: 'text', value: f.value ?? '', maxlength: f.maxlength, autocomplete: 'off', enterkeyhint: 'done' });
+      else input = h('input', { class: 'input', type: 'text', value: f.value ?? '', maxlength: f.maxlength, inputmode: f.inputmode, autocomplete: 'off', enterkeyhint: 'done' });
       inputs[f.name] = input;
       return h('label', { class: 'field' }, h('span', { class: 'field-label' }, f.label), input);
     }),
@@ -167,6 +187,16 @@ export function formDialog(title, fields, okLabel = t('save')) {
 }
 
 // ---------- theme ----------
+export const ACCENTS = {
+  blaze: ['#ff6a2b', '#ff2e63'],
+  electric: ['#3d8bfd', '#7b5cff'],
+  lime: ['#b6f23a', '#3ddc84'],
+  violet: ['#a46bff', '#ff4fd8'],
+};
+export function applyAccent(accent) {
+  document.documentElement.dataset.accent = ACCENTS[accent] ? accent : 'blaze';
+}
+
 export function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   const dark = theme === 'dark' || (theme === 'system' && !matchMedia('(prefers-color-scheme: light)').matches);

@@ -1,5 +1,5 @@
 // "More" tab: backup & import, progress pages, settings. Plus the import report.
-import { h, icon, topbar, seg, toggleRow, chooser, confirmDialog, toast, applyTheme, sheet } from '../ui.js';
+import { h, icon, topbar, seg, toggleRow, chooser, confirmDialog, toast, applyTheme, applyAccent, ACCENTS, sheet } from '../ui.js';
 import * as data from '../data.js';
 import { t, setLang, fmtLong, fmtRest, fmtAgo, fmtNum } from '../i18n.js';
 import { toISODate, norm, REST_OPTIONS, STEP_OPTIONS } from '../util.js';
@@ -8,7 +8,8 @@ import { isSQLite } from '../sqlite.js';
 import { saveFile, canShareFiles } from '../files.js';
 import { testAlarm } from '../timer.js';
 
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '2.0.0';
+const ALL_PLATES = [25, 20, 15, 10, 5, 2.5, 2, 1.25, 1, 0.5];
 
 export async function render(_, ctx) {
   const s = data.settings;
@@ -48,30 +49,47 @@ export async function render(_, ctx) {
         s.lastImport && h('button', { class: 'btn ghost full', onclick: () => ctx.go('/import-report') }, t('viewLastImport')),
         csvInput),
 
-      // ----- progress -----
-      h('h3', { class: 'section' }, t('progress')),
+      // ----- library -----
       h('div', { class: 'list card flush' },
-        h('button', { class: 'row', onclick: () => ctx.go('/checkins') }, h('span', { class: 'row-main' }, t('checkins'), h('div', { class: 'row-sub' }, t('checkinsSub'))), icon('right', 20)),
-        h('button', { class: 'row', onclick: () => ctx.go('/library') }, h('span', { class: 'row-main' }, t('library'), h('div', { class: 'row-sub' }, t('librarySub', { n: c.exercises }))), icon('right', 20))),
+        h('button', { class: 'row', onclick: () => ctx.go('/library') }, icon('dumbbell', 22), h('span', { class: 'row-main' }, t('library'), h('div', { class: 'row-sub' }, t('librarySub', { n: c.exercises }))), icon('right', 20)),
+        h('button', { class: 'row', onclick: () => ctx.go('/bodyweight') }, icon('scale', 22), h('span', { class: 'row-main' }, t('bodyweight')), icon('right', 20)),
+        h('button', { class: 'row', onclick: () => ctx.go('/checkins') }, icon('chart', 22), h('span', { class: 'row-main' }, t('checkins'), h('div', { class: 'row-sub' }, t('checkinsSub'))), icon('right', 20))),
 
-      // ----- settings -----
-      h('h3', { class: 'section' }, t('settings')),
-      h('div', { class: 'card stack' },
-        h('div', { class: 'field-label' }, t('language')),
-        seg([['en', 'English'], ['es', 'Español']], s.lang, async v => { await data.setSetting('lang', v); setLang(v); ctx.relabel(); }),
-        h('div', { class: 'field-label' }, t('theme')),
-        seg([['dark', t('themeDark')], ['light', t('themeLight')], ['system', t('themeSystem')]], s.theme, async v => { await data.setSetting('theme', v); applyTheme(v); ctx.refresh(); }),
-        h('div', { class: 'field-label' }, t('weightStep')),
-        seg(STEP_OPTIONS.map(v => [v, fmtNum(v) + ' kg']), s.step, v => set('step', v))),
+      // ----- workout settings -----
+      h('h3', { class: 'section' }, t('workoutSettings')),
       h('div', { class: 'list card flush' },
         h('button', { class: 'row', onclick: async () => {
           const v = await chooser(t('defaultRest'), REST_OPTIONS.map(x => ({ label: fmtRest(x), value: x, selected: x === s.rest })));
           if (v !== undefined) set('rest', v);
         } }, h('span', { class: 'row-main' }, t('defaultRest'), h('div', { class: 'row-sub' }, t('defaultRestSub'))), h('span', { class: 'row-count' }, fmtRest(s.rest))),
+        toggleRow(t('timerOnComplete'), s.timerOnComplete, v => set('timerOnComplete', v), t('timerOnCompleteSub')),
         toggleRow(t('sound'), s.sound, v => set('sound', v)),
         toggleRow(t('vibration'), s.vibrate, v => set('vibrate', v)),
         h('button', { class: 'row', onclick: testAlarm }, h('span', { class: 'row-main' }, t('testAlarm'))),
         toggleRow(t('keepAwake'), s.wake, v => set('wake', v), t('keepAwakeSub'))),
+      h('div', { class: 'card stack' },
+        h('div', { class: 'field-label' }, t('weightStep')),
+        seg(STEP_OPTIONS.map(v => [v, fmtNum(v) + ' kg']), s.step, v => set('step', v)),
+        h('div', { class: 'field-label' }, t('barWeight')),
+        seg([10, 15, 20, 25].map(v => [v, fmtNum(v) + ' kg']), Number(s.barWeight), v => set('barWeight', v)),
+        h('div', { class: 'field-label' }, t('platesAvailable')),
+        h('div', { class: 'chips' }, ALL_PLATES.map(p => {
+          const on = (s.plates || []).includes(p);
+          return h('button', { class: 'chip', style: on ? { background: 'var(--accent)', color: 'var(--accent-ink)' } : {}, 'aria-pressed': String(on),
+            onclick: () => set('plates', on ? s.plates.filter(x => x !== p) : [...(s.plates || []), p].sort((a, b) => b - a)) }, fmtNum(p));
+        }))),
+
+      // ----- appearance -----
+      h('h3', { class: 'section' }, t('appearance')),
+      h('div', { class: 'card stack' },
+        h('div', { class: 'field-label' }, t('language')),
+        seg([['en', 'English'], ['es', 'Español']], s.lang, async v => { await data.setSetting('lang', v); setLang(v); ctx.relabel(); }),
+        h('div', { class: 'field-label' }, t('accentColor')),
+        h('div', { class: 'swatches' }, Object.entries(ACCENTS).map(([k, [a1, a2]]) =>
+          h('button', { class: 'swatch' + (s.accent === k ? ' active' : ''), style: { '--a1': a1, '--a2': a2 }, 'aria-label': t('accent_' + k), 'aria-pressed': String(s.accent === k),
+            onclick: async () => { await data.setSetting('accent', k); applyAccent(k); ctx.refresh(); } }))),
+        h('div', { class: 'field-label' }, t('theme')),
+        seg([['dark', t('themeDark')], ['light', t('themeLight')], ['system', t('themeSystem')]], s.theme, async v => { await data.setSetting('theme', v); applyTheme(v); ctx.refresh(); })),
 
       // ----- storage -----
       h('h3', { class: 'section' }, t('storage')),
@@ -108,6 +126,7 @@ async function restore(file, ctx) {
   await data.restoreAll(obj);
   setLang(data.settings.lang);
   applyTheme(data.settings.theme);
+  applyAccent(data.settings.accent);
   toast(t('restored'));
   ctx.relabel();
 }

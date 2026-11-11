@@ -1,23 +1,28 @@
 // Minimal promise wrapper around IndexedDB.
 const DB_NAME = 'strength-log';
-const VERSION = 1;
-export const STORES = ['categories', 'exercises', 'sets', 'sessions', 'routines', 'settings'];
+const VERSION = 2;
+export const STORES = ['categories', 'exercises', 'sets', 'sessions', 'routines', 'settings', 'bodyweight'];
 
 let dbp = null;
 export function openDB() {
   if (dbp) return dbp;
   dbp = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, VERSION);
-    req.onupgradeneeded = () => {
+    req.onupgradeneeded = e => {
       const db = req.result;
-      db.createObjectStore('categories', { keyPath: 'id' });
-      db.createObjectStore('exercises', { keyPath: 'id' });
-      const sets = db.createObjectStore('sets', { keyPath: 'id' });
-      sets.createIndex('date', 'date');
-      sets.createIndex('exerciseId', 'exerciseId');
-      db.createObjectStore('sessions', { keyPath: 'date' });   // one per day: check-in + routine
-      db.createObjectStore('routines', { keyPath: 'id' });
-      db.createObjectStore('settings', { keyPath: 'k' });
+      if (e.oldVersion < 1) {
+        db.createObjectStore('categories', { keyPath: 'id' });
+        db.createObjectStore('exercises', { keyPath: 'id' });
+        const sets = db.createObjectStore('sets', { keyPath: 'id' });
+        sets.createIndex('date', 'date');
+        sets.createIndex('exerciseId', 'exerciseId');
+        db.createObjectStore('sessions', { keyPath: 'date' });   // one per day: check-in + routine
+        db.createObjectStore('routines', { keyPath: 'id' });
+        db.createObjectStore('settings', { keyPath: 'k' });
+      }
+      if (e.oldVersion < 2) {
+        db.createObjectStore('bodyweight', { keyPath: 'date' });  // v2: { date, kg }
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -36,6 +41,7 @@ export const getAll = async name => wrap((await store(name)).getAll());
 export const get = async (name, key) => wrap((await store(name)).get(key));
 export const count = async name => wrap((await store(name)).count());
 export const byIndex = async (name, index, value) => wrap((await store(name)).index(index).getAll(value));
+export const byRange = async (name, index, lo, hi) => wrap((await store(name)).index(index).getAll(IDBKeyRange.bound(lo, hi)));
 export async function put(name, obj) { await wrap((await store(name, 'readwrite')).put(obj)); return obj; }
 export const del = async (name, key) => wrap((await store(name, 'readwrite')).delete(key));
 

@@ -112,7 +112,7 @@ test('every translation key used in the code exists in English and Spanish', () 
   const used = new Set();
   for (const f of files) for (const m of fs.readFileSync(f, 'utf8').matchAll(/\bt\('([a-zA-Z0-9_]+)'\s*([+)?,])/g)) if (m[2] !== '+') used.add(m[1]);
   // keys built dynamically
-  for (const p of ['nav_workout', 'nav_history', 'nav_routines', 'nav_more', 'tab_track', 'tab_history', 'tab_graph']) used.add(p);
+  for (const p of ['nav_workout', 'nav_calendar', 'nav_routines', 'nav_progress', 'nav_more', 'tab_track', 'tab_history', 'tab_graph', 'accent_blaze', 'accent_electric', 'accent_lime', 'accent_violet', 'markDone', 'markNotDone']) used.add(p);
   for (const k of ['mood', 'motivation', 'satisfaction']) ['q_', 'low_', 'high_'].forEach(p => used.add(p + k));
   for (const r of ['noExercise', 'badDate', 'cardio', 'noReps', 'badReps', 'badWeight', 'negativeWeight', 'notComplete']) used.add('skip_' + r);
   const missing = [...used].filter(k => !dict.en[k] || !dict.es[k]);
@@ -130,6 +130,49 @@ test('service worker caches every app file', () => {
   const walk = (d, rel) => fs.readdirSync(d, { withFileTypes: true }).forEach(e => e.isDirectory() ? walk(path.join(d, e.name), rel + e.name + '/') : files.push(rel + e.name));
   walk(path.join(root, 'js'), 'js/');
   walk(path.join(root, 'icons'), 'icons/');
+  walk(path.join(root, 'fonts'), 'fonts/');
   files.push('css/app.css', 'index.html', 'manifest.webmanifest');
+  files.splice(0, files.length, ...files.filter(f => !f.endsWith('OFL.txt')));
   assert.deepEqual(files.filter(f => !listed.has(f)), []);
+});
+
+// ---------------------------------------------------------------- v2
+import { e1rm, platesFor, weeklyTotals, weekStreak, recentRecords, workoutMinutes } from '../js/stats.js';
+
+test('e1rm (Epley) and its limits', () => {
+  assert.equal(e1rm(100, 1), 100);
+  assert.equal(Math.round(e1rm(100, 5) * 10) / 10, 116.7);
+  assert.equal(e1rm(100, 15), null);
+  assert.equal(e1rm(0, 5), null);
+});
+
+test('platesFor loads each side greedily and reports the rest', () => {
+  assert.deepEqual(platesFor(100, 20), { perSide: [25, 15], loaded: 100, rest: 0 });
+  assert.deepEqual(platesFor(62.5, 20), { perSide: [20, 1.25], loaded: 62.5, rest: 0 });
+  assert.deepEqual(platesFor(61, 20), { perSide: [20], loaded: 60, rest: 1 });
+  assert.deepEqual(platesFor(20, 20).perSide, []);
+});
+
+test('weeklyTotals and weekStreak', () => {
+  const sets = [S('a', '2026-10-27', 50, 10), S('b', '2026-10-28', 50, 10), S('c', '2026-11-03', 100, 5), S('d', '2026-11-10', 60, 5)];
+  assert.deepEqual(weeklyTotals(sets), [
+    { week: '2026-10-26', workouts: 2, sets: 2, volume: 1000 },
+    { week: '2026-11-02', workouts: 1, sets: 1, volume: 500 },
+    { week: '2026-11-09', workouts: 1, sets: 1, volume: 300 },
+  ]);
+  assert.equal(weekStreak(sets, '2026-11-10'), 3);
+  assert.equal(weekStreak(sets.slice(0, 3), '2026-11-10'), 2);   // this week empty: counts up to last week
+  assert.equal(weekStreak(sets.slice(0, 2), '2026-11-10'), 0);
+});
+
+test('recentRecords lists newest records first', () => {
+  const sets = [S('1', '2026-01-01', 50, 5), S('2', '2026-01-02', 55, 5), { ...S('3', '2026-01-01', 20, 10), exerciseId: 'b' }, { ...S('4', '2026-01-03', 20, 12), exerciseId: 'b' }];
+  sets.forEach(s => (s.exerciseId ??= 'a'));
+  assert.deepEqual(recentRecords(sets).map(r => [r.set.id, r.type]), [['4', 'reps'], ['2', 'weight']]);
+});
+
+test('workoutMinutes ignores missing or silly timestamps', () => {
+  assert.equal(workoutMinutes([{ t: 0 }, { t: 45 * 60000 }]), null);   // t=0 filtered → one value
+  assert.equal(workoutMinutes([{ t: 1000 }, { t: 1000 + 45 * 60000 }]), 45);
+  assert.equal(workoutMinutes([{ t: 1000 }, { t: 1000 + 9 * 3600000 }]), null);
 });

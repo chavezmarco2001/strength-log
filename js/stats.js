@@ -81,3 +81,77 @@ export function weeklyCheckins(sessions) {
     .sort((a, b) => (a.week < b.week ? -1 : 1))
     .map(a => ({ week: a.week, n: a.n, ...Object.fromEntries(CHECKIN_KEYS.map(k => [k, a.cnt[k] ? a.sum[k] / a.cnt[k] : null])) }));
 }
+
+// ---------------------------------------------------------------- v2
+/** Estimated one-rep max (Epley). Only trusted up to 12 reps; returns null above. */
+export function e1rm(weight, reps) {
+  if (!(weight > 0) || !(reps > 0) || reps > 12) return null;
+  return reps === 1 ? weight : weight * (1 + reps / 30);
+}
+export function bestE1rm(sets) {
+  let best = null;
+  for (const s of sets) { const v = e1rm(s.weight, s.reps); if (v != null && (!best || v > best.value)) best = { value: v, set: s }; }
+  return best;
+}
+
+/**
+ * Plates to load on EACH side of the bar for `total` kg.
+ * @returns {{ perSide: number[], loaded: number, rest: number }} rest = kg that couldn't be matched
+ */
+export function platesFor(total, bar = 20, plates = [25, 20, 15, 10, 5, 2.5, 1.25]) {
+  const per = Math.round(((total - bar) / 2) * 1000) / 1000;
+  const perSide = [];
+  if (per <= 0) return { perSide, loaded: Math.max(bar, 0), rest: Math.max(0, Math.round((total - bar) * 100) / 100) };
+  let left = per;
+  for (const p of [...plates].sort((a, b) => b - a)) {
+    while (left + 1e-9 >= p) { perSide.push(p); left = Math.round((left - p) * 1000) / 1000; }
+  }
+  const loaded = bar + 2 * perSide.reduce((a, b) => a + b, 0);
+  return { perSide, loaded: Math.round(loaded * 100) / 100, rest: Math.round((total - loaded) * 100) / 100 };
+}
+
+/** Per-week totals (weeks start Monday) for completed sets: [{ week, workouts, sets, volume }]. */
+export function weeklyTotals(sets) {
+  const m = new Map();
+  for (const s of sets) {
+    const w = weekStart(s.date);
+    let a = m.get(w);
+    if (!a) m.set(w, a = { week: w, days: new Set(), sets: 0, volume: 0 });
+    a.days.add(s.date);
+    a.sets++;
+    a.volume += s.weight * s.reps;
+  }
+  return [...m.values()].sort((a, b) => (a.week < b.week ? -1 : 1)).map(a => ({ week: a.week, workouts: a.days.size, sets: a.sets, volume: a.volume }));
+}
+
+/** Consecutive weeks (ending this week or last week) with at least one workout. */
+export function weekStreak(sets, today) {
+  const weeks = new Set(sets.map(s => weekStart(s.date)));
+  let w = weekStart(today);
+  if (!weeks.has(w)) w = shiftWeek(w, -1);         // this week not started yet: count from last week
+  let n = 0;
+  while (weeks.has(w)) { n++; w = shiftWeek(w, -1); }
+  return n;
+}
+function shiftWeek(iso, k) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + 7 * k);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
+/** Most recent personal records across all exercises: [{ set, type }], newest first. */
+export function recentRecords(sortedSets, limit = 10) {
+  const byEx = new Map();
+  for (const s of sortedSets) { if (!byEx.has(s.exerciseId)) byEx.set(s.exerciseId, []); byEx.get(s.exerciseId).push(s); }
+  const out = [];
+  for (const list of byEx.values()) for (const [id, type] of markPRs(list)) out.push({ set: list.find(s => s.id === id), type });
+  return out.sort((a, b) => (a.set.date < b.set.date ? 1 : a.set.date > b.set.date ? -1 : b.set.t - a.set.t)).slice(0, limit);
+}
+
+/** Minutes between the first and last completed set of a day (by their timestamps), or null. */
+export function workoutMinutes(daySets) {
+  const ts = daySets.map(s => s.t).filter(Boolean);
+  if (ts.length < 2) return null;
+  const min = Math.round((Math.max(...ts) - Math.min(...ts)) / 60000);
+  return min > 0 && min < 6 * 60 ? min : null;   // imported data has fake timestamps: ignore silly values
+}

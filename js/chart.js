@@ -34,7 +34,9 @@ export function lineChart({ series, yMin, yMax, fmtY = String, fmtVal = fmtY, fm
   root.append(cursor);
   for (const s of series) {
     const p = [...s.points].sort((a, b) => a.x - b.x);
-    if (p.length > 1) root.append(svg('path', { d: p.map((q, i) => `${i ? 'L' : 'M'}${sx(q.x).toFixed(1)},${sy(q.y).toFixed(1)}`).join(''), class: 'line', style: `stroke:${s.color}` }));
+    const d = p.map((q, i) => `${i ? 'L' : 'M'}${sx(q.x).toFixed(1)},${sy(q.y).toFixed(1)}`).join('');
+    if (p.length > 1 && series.length === 1) root.append(svg('path', { d: `${d}L${sx(p.at(-1).x).toFixed(1)},${H - B}L${sx(p[0].x).toFixed(1)},${H - B}Z`, class: 'area', style: `fill:${s.color}` }));
+    if (p.length > 1) root.append(svg('path', { d, class: 'line', style: `stroke:${s.color}` }));
     if (p.length <= 80) p.forEach(q => root.append(svg('circle', { cx: sx(q.x), cy: sy(q.y), r: 3.5, class: 'pt', style: `fill:${s.color}` })));
   }
 
@@ -61,4 +63,47 @@ export function lineChart({ series, yMin, yMax, fmtY = String, fmtVal = fmtY, fm
   root.addEventListener('pointermove', e => { if (e.buttons || e.pointerType === 'touch') pick(e); });
   show(allX.at(-1));
   return root;
+}
+
+/**
+ * Simple bar chart. bars: [{ label, value, title? }]. Tap a bar to read it.
+ * The last bar is highlighted (usually "this week").
+ */
+export function barChart({ bars, fmtY = String, fmtVal = fmtY, color = 'var(--accent)', height = 170 }) {
+  if (!bars.length) return null;
+  const W = 360, H = height, L = 34, R = 8, T = 26, B = 22;
+  const max = Math.max(1, ...bars.map(b => b.value));
+  const top = niceMax(max);
+  const bw = (W - L - R) / bars.length;
+  const sy = v => T + (1 - v / top) * (H - T - B);
+  const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart', role: 'img' });
+  for (let i = 0; i <= 2; i++) {
+    const v = (top * i) / 2, y = sy(v);
+    root.append(svg('line', { x1: L, x2: W - R, y1: y, y2: y, class: 'grid' }), svg('text', { x: L - 6, y: y + 4, 'text-anchor': 'end', class: 'axis' }, fmtY(v)));
+  }
+  const readout = svg('text', { x: L, y: 15, class: 'readout' });
+  const rects = bars.map((b, i) => {
+    const x = L + i * bw + bw * 0.18, w = bw * 0.64, y = sy(b.value);
+    const r = svg('rect', { x, y, width: w, height: Math.max(0, H - B - y), class: 'bar', style: `fill:${color};opacity:${i === bars.length - 1 ? 1 : 0.55}` });
+    root.append(r);
+    if (bars.length <= 12 || i % 2 === bars.length % 2) root.append(svg('text', { x: x + w / 2, y: H - 6, 'text-anchor': 'middle', class: 'axis' }, b.label));
+    return r;
+  });
+  root.append(readout);
+  const show = i => {
+    readout.textContent = `${bars[i].title || bars[i].label}: ${fmtVal(bars[i].value)}`;
+    rects.forEach((r, j) => (r.style.opacity = j === i ? 1 : 0.45));
+  };
+  root.addEventListener('pointerdown', e => {
+    const rr = root.getBoundingClientRect();
+    const i = Math.floor((((e.clientX - rr.left) / rr.width) * W - L) / bw);
+    if (i >= 0 && i < bars.length) show(i);
+  });
+  show(bars.length - 1);
+  return root;
+}
+function niceMax(v) {
+  const p = 10 ** Math.floor(Math.log10(v));
+  for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p;
+  return 10 * p;
 }

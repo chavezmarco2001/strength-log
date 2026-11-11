@@ -112,7 +112,7 @@ function draw() {
   el.replaceChildren(
     h('div', { class: 'timer-fill' }),
     h('button', { class: 'timer-btn', 'aria-label': t('minus15'), onclick: () => adjust(-15) }, '−15'),
-    h('div', { class: 'timer-time', 'aria-live': 'off' }),
+    h('div', { class: 'timer-time', 'aria-live': 'off' }, h('small', {}, t('rest')), h('span', { class: 'tt' })),
     h('button', { class: 'timer-btn', 'aria-label': t('plus15'), onclick: () => adjust(15) }, '+15'),
     h('button', { class: 'timer-btn', 'aria-label': t('stopTimer'), onclick: stop }, icon('close')));
   update();
@@ -121,7 +121,7 @@ function draw() {
 function update() {
   const el = root();
   const rem = Math.max(0, endAt - Date.now());
-  const tt = el.querySelector('.timer-time');
+  const tt = el.querySelector('.timer-time .tt');
   if (tt) tt.textContent = fmt(Math.ceil(rem / 1000));
   const f = el.querySelector('.timer-fill');
   if (f) f.style.transform = `scaleX(${Math.min(1, rem / (total * 1000))})`;

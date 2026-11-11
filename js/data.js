@@ -2,10 +2,12 @@
 //
 // Records (IndexedDB stores):
 //   categories { id, name, nameEs?, color, order }
-//   exercises  { id, name, nameEs?, categoryId, rest? }      rest = seconds, overrides default
-//   sets       { id, exerciseId, date:'YYYY-MM-DD', weight (kg), reps, t (ordering ms), comment? }
+//   exercises  { id, name, nameEs?, categoryId, rest?, note? }   rest = seconds, overrides default
+//   sets       { id, exerciseId, date:'YYYY-MM-DD', weight (kg), reps, t (ordering ms), comment?, done? }
+//              done === false → planned (not yet completed). Missing = completed (v1 data, imports).
 //   sessions   { date, routineId?, mood?, motivation?, satisfaction?, note?, finishedAt? }
-//   routines   { id, name, items: [exerciseId] }
+//   routines   { id, name, exercises: [{ id, sets, reps? }], items: [exerciseId] }   items = ids, kept in sync (v1)
+//   bodyweight { date, kg }
 //   settings   { k, v }
 import * as db from './db.js';
 import { SEED_CATEGORIES, SEED_EXERCISES, PALETTE } from './seed.js';
@@ -15,10 +17,14 @@ import { checkPR } from './stats.js';
 import { toCSV } from './csv.js';
 
 export const DEFAULTS = {
-  lang: 'en', theme: 'dark', rest: 90, step: 2.5,
-  sound: true, vibrate: true, wake: true,
+  lang: 'en', theme: 'dark', accent: 'blaze', rest: 90, step: 2.5,
+  sound: true, vibrate: true, wake: true, timerOnComplete: true,
+  barWeight: 20, plates: [25, 20, 15, 10, 5, 2.5, 1.25],
   lastBackup: 0, backupDays: 7, backupSnooze: 0,
 };
+export const DEFAULT_ROUTINE_SETS = 3;
+export const isDone = s => s.done !== false;
+export const doneOnly = list => list.filter(isDone);
 export const settings = { ...DEFAULTS };
 export let categories = [];
 export let exercises = [];
@@ -42,8 +48,19 @@ async function seed() {
   settings.seeded = true;
 }
 
+/** v1 routines only had `items` (ids); v2 adds per-exercise sets/reps in `exercises`. */
+export function normalizeRoutine(r) {
+  const list = Array.isArray(r.exercises) ? r.exercises : (r.items || []).map(id => ({ id, sets: DEFAULT_ROUTINE_SETS }));
+  const exercises = list
+    .filter(e => e && e.id)
+    .map(e => ({ id: e.id, sets: Math.min(20, Math.max(1, Math.round(e.sets) || DEFAULT_ROUTINE_SETS)), ...(e.reps > 0 ? { reps: Math.round(e.reps) } : {}) }));
+  return { ...r, exercises, items: exercises.map(e => e.id) };
+}
+
 export async function reload() {
-  [categories, exercises, routines] = await Promise.all([db.getAll('categories'), db.getAll('exercises'), db.getAll('routines')]);
+  let rts;
+  [categories, exercises, rts] = await Promise.all([db.getAll('categories'), db.getAll('exercises'), db.getAll('routines')]);
+  routines = rts.map(normalizeRoutine);
   categories.sort((a, b) => (a.order ?? 999) - (b.order ?? 999) || catName(a).localeCompare(catName(b)));
   exMap = new Map(exercises.map(e => [e.id, e]));
   catMap = new Map(categories.map(c => [c.id, c]));
@@ -78,7 +95,7 @@ export async function deleteExercise(id) {
   await db.transact(['sets', 'exercises', 'routines'], s => {
     sets.forEach(x => s.sets.delete(x.id));
     s.exercises.delete(id);
-    routines.forEach(r => { if (r.items.includes(id)) s.routines.put({ ...r, items: r.items.filter(i => i !== id) }); });
+    routines.forEach(r => { if (r.items.includes(id)) s.routines.put(normalizeRoutine({ ...r, exercises: r.exercises.filter(e => e.id !== id) })); });
   });
   await reload();
 }
@@ -105,17 +122,73 @@ export const setsForDate = async d => (await db.byIndex('sets', 'date', d)).sort
 export const setsForExercise = async id => (await db.byIndex('sets', 'exerciseId', id)).sort(bySetOrder);
 export const allSets = async () => (await db.getAll('sets')).sort(bySetOrder);
 
-/** Saves a new set and tells whether it is a personal record ('weight' | 'reps' | null). */
+export const setsInRange = async (from, to) => (await db.byRange('sets', 'date', from, to)).sort(bySetOrder);
+
+/** Is `set` a personal record against the completed sets logged before it? */
+async function prFor(set) {
+  const history = doneOnly(await setsForExercise(set.exerciseId));
+  return checkPR(history.filter(s => s.id !== set.id && bySetOrder(s, set) < 0), set);
+}
+
+/** Saves a new completed set and tells whether it is a personal record ('weight' | 'reps' | null). */
 export async function addSet({ exerciseId, date, weight, reps }) {
-  const history = await setsForExercise(exerciseId);
   const set = { id: uid(), exerciseId, date, weight, reps, t: Date.now() };
-  const pr = checkPR(history.filter(s => bySetOrder(s, set) < 0), set);
+  const pr = await prFor(set);
   await db.put('sets', set);
   anySets = true;
   return { set, pr };
 }
+/** Marks a planned set as completed (optionally with new values). */
+export async function completeSet(set, values = {}) {
+  const done = { ...set, ...values };
+  delete done.done;
+  const pr = await prFor(done);
+  await db.put('sets', done);
+  anySets = true;
+  return { set: done, pr };
+}
+export async function uncompleteSet(set) { await db.put('sets', { ...set, done: false }); }
 export const putSet = s => db.put('sets', s);
 export const deleteSet = id => db.del('sets', id);
+
+/** Adds planned (not yet done) sets at the end of `date`, in the given order. */
+export async function planSets(date, entries) {
+  const t0 = Date.now();
+  const sets = entries.map((e, i) => ({ id: uid(), exerciseId: e.exerciseId, date, weight: e.weight ?? 0, reps: e.reps ?? 0, t: t0 + i, done: false }));
+  if (sets.length) await db.transact(['sets'], s => sets.forEach(x => s.sets.put(x)));
+  return sets.length;
+}
+
+/** Completed sets of the most recent day before `date` for one exercise. */
+export async function lastSessionSets(exerciseId, beforeDate) {
+  const all = doneOnly(await setsForExercise(exerciseId));
+  let d = null;
+  for (let i = all.length - 1; i >= 0; i--) if (all[i].date < beforeDate) { d = all[i].date; break; }
+  return d ? all.filter(s => s.date === d) : [];
+}
+
+/** Copies the completed sets of `fromDate` into `toDate` as planned sets. Returns how many. */
+export async function repeatWorkout(fromDate, toDate) {
+  const src = doneOnly(await setsForDate(fromDate));
+  return planSets(toDate, src.map(s => ({ exerciseId: s.exerciseId, weight: s.weight, reps: s.reps })));
+}
+
+/** Days with completed sets, newest first: [{ date, sets, exerciseIds }]. */
+export async function workoutDays(limit = Infinity) {
+  const map = new Map();
+  for (const s of doneOnly(await allSets())) {
+    let d = map.get(s.date);
+    if (!d) map.set(s.date, d = { date: s.date, sets: 0, exerciseIds: [] });
+    d.sets++;
+    if (!d.exerciseIds.includes(s.exerciseId)) d.exerciseIds.push(s.exerciseId);
+  }
+  return [...map.values()].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, limit);
+}
+
+// ---------- body weight ----------
+export const bodyweights = async () => (await db.getAll('bodyweight')).sort((a, b) => (a.date < b.date ? -1 : 1));
+export const saveBodyweight = (date, kg) => db.put('bodyweight', { date, kg });
+export const deleteBodyweight = date => db.del('bodyweight', date);
 
 /** Most recently trained exercises, newest first. */
 export async function recentExercises(n) {
@@ -134,22 +207,56 @@ export const allSessions = () => db.getAll('sessions');
 
 // ---------- routines ----------
 export async function saveRoutine(r) {
-  if (!r.id) r.id = uid();
-  r.items ??= [];
-  await db.put('routines', r);
+  const out = normalizeRoutine({ ...r, id: r.id || uid() });
+  await db.put('routines', out);
   await reload();
-  return r;
+  return getRoutine(out.id);
 }
 export async function deleteRoutine(id) { await db.del('routines', id); await reload(); }
 export async function addToRoutine(id, exId) {
   const r = getRoutine(id);
-  if (r && !r.items.includes(exId)) await saveRoutine({ ...r, items: [...r.items, exId] });
+  if (r && !r.items.includes(exId)) await saveRoutine({ ...r, exercises: [...r.exercises, { id: exId, sets: DEFAULT_ROUTINE_SETS }] });
 }
-export async function startRoutine(id) {
-  const d = toISODate();
-  const s = (await getSession(d)) || { date: d };
+
+/**
+ * Starts a routine on `date`: links it to the day and plans its sets. Weights (and reps,
+ * unless the routine sets a target) come from the last time each exercise was done.
+ * Exercises that already have sets that day are left alone. Returns the number of planned sets.
+ */
+export async function startRoutine(id, date = toISODate()) {
+  const r = getRoutine(id);
+  if (!r) return 0;
+  const s = (await getSession(date)) || { date };
   s.routineId = id;
   await saveSession(s);
+  const today = await setsForDate(date);
+  const entries = [];
+  for (const item of r.exercises) {
+    if (!exMap.has(item.id) || today.some(x => x.exerciseId === item.id)) continue;
+    const last = await lastSessionSets(item.id, date);
+    for (let i = 0; i < item.sets; i++) {
+      const ref = last[Math.min(i, last.length - 1)];
+      entries.push({ exerciseId: item.id, weight: ref?.weight ?? 0, reps: item.reps || ref?.reps || 0 });
+    }
+  }
+  return planSets(date, entries);
+}
+
+/** Creates a routine from the exercises (and number of sets) done on `date`. */
+export async function routineFromDay(date, name) {
+  const sets = doneOnly(await setsForDate(date));
+  const order = [];
+  for (const s of sets) {
+    let e = order.find(x => x.id === s.exerciseId);
+    if (!e) order.push(e = { id: s.exerciseId, sets: 0, repsSeen: [] });
+    e.sets++;
+    e.repsSeen.push(s.reps);
+  }
+  const exercisesPlan = order.map(e => {
+    const same = e.repsSeen.every(x => x === e.repsSeen[0]);
+    return { id: e.id, sets: e.sets, ...(same ? { reps: e.repsSeen[0] } : {}) };
+  });
+  return saveRoutine({ name, exercises: exercisesPlan });
 }
 
 // ---------- backups ----------
@@ -170,17 +277,17 @@ export async function counts() {
 }
 
 export async function exportAll() {
-  const [cats, exs, sets, sessions, rts, sett] = await Promise.all(db.STORES.map(n => db.getAll(n)));
+  const [cats, exs, sets, sessions, rts, sett, bw] = await Promise.all(db.STORES.map(n => db.getAll(n)));
   return {
-    app: 'strength-log', format: 1, exportedAt: new Date().toISOString(),
-    categories: cats, exercises: exs, sets, sessions, routines: rts,
+    app: 'strength-log', format: 2, exportedAt: new Date().toISOString(),
+    categories: cats, exercises: exs, sets, sessions, routines: rts, bodyweight: bw,
     settings: sett.filter(s => s.k !== 'lastImport'),
   };
 }
 
 export function validateBackup(o) {
   if (!o || o.app !== 'strength-log' || typeof o.format !== 'number') return 'notBackup';
-  if (o.format > 1) return 'newerFormat';
+  if (o.format > 2) return 'newerFormat';
   for (const k of ['categories', 'exercises', 'sets', 'sessions', 'routines']) if (!Array.isArray(o[k])) return 'missing:' + k;
   return null;
 }
@@ -193,7 +300,8 @@ export async function restoreAll(o) {
     o.exercises.forEach(x => s.exercises.put(x));
     o.sets.forEach(x => s.sets.put(x));
     o.sessions.forEach(x => s.sessions.put(x));
-    o.routines.forEach(x => s.routines.put(x));
+    o.routines.forEach(x => s.routines.put(normalizeRoutine(x)));
+    (o.bodyweight || []).forEach(x => s.bodyweight.put(x));
     (o.settings || []).forEach(x => s.settings.put(x));
     s.settings.put({ k: 'seeded', v: true });
   });
@@ -207,7 +315,7 @@ export async function restoreAll(o) {
 /** All sets as CSV, using the same columns as FitNotes so it can be re-imported. */
 export async function exportCSV() {
   const rows = [['Date', 'Exercise', 'Category', 'Weight (kgs)', 'Reps', 'Comment']];
-  for (const s of await allSets()) {
+  for (const s of doneOnly(await allSets())) {
     const e = getExercise(s.exerciseId), c = e && getCategory(e.categoryId);
     rows.push([s.date, e ? e.name : '?', c ? c.name : '', s.weight, s.reps, s.comment || '']);
   }
@@ -297,7 +405,8 @@ export async function importFitNotes(an, { removeUnusedBuiltins = false, restSec
   for (const r of an.routines || []) {
     if (routineNames.has(norm(r.name))) { report.existingRoutines.push(r.name); continue; }
     routineNames.add(norm(r.name));
-    newRoutines.push({ id: uid(), name: r.name, items: [...new Set(r.exercises.map(e => exercise(e.name, e.category, e.color).id))] });
+    const ids = [...new Set(r.exercises.map(e => exercise(e.name, e.category, e.color).id))];
+    newRoutines.push(normalizeRoutine({ id: uid(), name: r.name, exercises: ids.map(id => ({ id, sets: DEFAULT_ROUTINE_SETS })) }));
     report.createdRoutines.push(r.name);
   }
 
