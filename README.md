@@ -2,6 +2,15 @@
 
 Registro personal de entrenamientos de fuerza. Es una PWA: una página web que se instala en Android como una app y funciona sin internet. No tiene servidor, cuentas ni publicidad. Los datos quedan solo en el celular (IndexedDB).
 
+**Versión 2:**
+- Series planificadas que marcas con ✓, y descanso automático.
+- Calendario con puntos de colores por grupo muscular.
+- Repetir entrenos anteriores.
+- Rutinas con series y repeticiones.
+- Pestaña Progreso: resumen semanal, racha, récords y peso corporal.
+- Calculadora de discos, 1RM estimado y notas por ejercicio.
+- 4 colores de acento.
+
 ## Instalarla en el celular (Android + Chrome)
 
 1. Abre la dirección de la app en **Chrome** (por ejemplo `https://chavezmarco2001.github.io/strength-log/`).
