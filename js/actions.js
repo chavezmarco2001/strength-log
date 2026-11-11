@@ -20,6 +20,7 @@ export function afterComplete(set, pr) {
 /** Tick / untick a set. Resolves with the record type when completing a record. */
 export async function toggleDone(set) {
   if (data.isDone(set)) { await data.uncompleteSet(set); haptic(data.settings.vibrate, 8); return null; }
+  if (!(set.reps > 0)) return 'empty';   // nothing planned yet: enter the values first
   const { set: done, pr } = await data.completeSet(set);
   afterComplete(done, pr);
   return pr;

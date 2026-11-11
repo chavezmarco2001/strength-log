@@ -96,7 +96,8 @@ function trackTab(ex, all, date, ctx) {
   async function update() {
     const v = read();
     if (!v) return;
-    await data.putSet({ ...editSet, ...v });
+    if (data.isDone(editSet)) await data.putSet({ ...editSet, ...v });
+    else { const res = await data.completeSet(editSet, v); afterComplete(res.set, res.pr); }   // planned: save + tick
     editing = null;
     ctx.refresh();
   }
@@ -126,7 +127,7 @@ function trackTab(ex, all, date, ctx) {
 
   const actions = editSet
     ? [h('div', { class: 'btn-row' },
-      h('button', { class: 'btn primary big', onclick: update }, t('update')),
+      h('button', { class: 'btn primary big', onclick: update }, data.isDone(editSet) ? t('update') : [icon('check', 22), t('completeSetN', { n: todays.indexOf(editSet) + 1 })]),
       h('button', { class: 'btn danger big', onclick: remove }, icon('trash'), t('delete'))),
     h('button', { class: 'btn ghost full', onclick: () => { editing = null; ctx.refresh(); } }, t('cancelEdit'))]
     : h('button', { class: 'btn primary big save-btn', onclick: save }, icon('check', 26), next ? t('completeSetN', { n: nextNo }) : t('saveSet'));
@@ -148,7 +149,10 @@ function trackTab(ex, all, date, ctx) {
     todays.length > 0 && h('h3', { class: 'section' }, date === toISODate() ? t('todaySets') : fmtLong(date)),
     todays.length > 0 && h('div', { class: 'card', style: { padding: '6px 0' } }, setTable({
       sets: todays, prev: lastByIndex, prIds: prs, selectedId: editing,
-      onTick: async s => { await toggleDone(s); ctx.refresh(); },
+      onTick: async s => {
+        if (await toggleDone(s) === 'empty') { toast(t('enterValuesFirst')); editing = s.id; }
+        ctx.refresh();
+      },
       onRow: s => { editing = editing === s.id ? null : s.id; ctx.refresh(); },
     })),
     todays.length > 0 && !editSet && h('p', { class: 'muted small hint' }, t('setHint')));

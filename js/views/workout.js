@@ -1,5 +1,5 @@
 // Main screen: the workout of one day — week strip, summary, exercises with ✓ sets.
-import { h, icon, chooser, formDialog, confirmDialog, toast } from '../ui.js';
+import { h, icon, chooser, formDialog, confirmDialog, toast, sheet } from '../ui.js';
 import * as data from '../data.js';
 import { t, fmtNum, fmtDayTitle, fmtLong, fmtShort, fmtDate } from '../i18n.js';
 import { toISODate, addDays, weekStart } from '../util.js';
@@ -66,14 +66,52 @@ export async function render(_, ctx) {
     for (const s of planned) await data.deleteSet(s.id);
     ctx.refresh();
   };
+  const moveTo = async () => {
+    const to = await pickDate(t('moveWorkoutTo'), date);
+    if (!to) return;
+    const n = await data.moveDay(date, to);
+    toast(t('workoutMoved', { n, date: fmtLong(to) }), { ms: 4000, action: { label: t('undo'), fn: async () => { await data.moveDay(to, date); ctx.refresh(); } } });
+    ctx.setDate(to);
+  };
+  const copyTo = async () => {
+    const to = await pickDate(t('copyWorkoutTo'), date);
+    if (!to) return;
+    const n = await data.copyDay(date, to);
+    toast(t('workoutCopied', { n, date: fmtLong(to) }), { ms: 4000 });
+    ctx.setDate(to);
+  };
+  const deleteWorkout = async () => {
+    if (!(await confirmDialog(t('deleteWorkoutConfirm', { n: sets.length, date: fmtLong(date) }), { ok: t('delete'), danger: true }))) return;
+    const snap = await data.deleteDay(date);
+    ctx.refresh();
+    toast(t('workoutDeleted'), { ms: 6000, action: { label: t('undo'), fn: async () => { await data.undoDeleteDay(snap); ctx.refresh(); } } });
+  };
   const menu = async () => {
     const opts = [];
     if (date !== today) opts.push({ label: t('goToday'), value: 'today' });
-    opts.push({ label: t('startRoutine'), value: 'routine' }, { label: t('repeatWorkout'), value: 'repeat' });
+    opts.push({ label: t('startRoutine'), value: 'routine' }, { label: t('repeatWorkout'), sub: t('repeatWorkoutSub'), value: 'repeat' });
+    if (sets.length) opts.push({ label: t('moveWorkoutTo'), value: 'move' }, { label: t('copyWorkoutTo'), value: 'copy' });
     if (done.length) opts.push({ label: t('saveAsRoutine'), value: 'save' }, { label: session?.finishedAt ? t('editCheckin') : t('finishWorkout'), value: 'finish' });
-    if (sets.some(s => !data.isDone(s))) opts.push({ label: t('clearPlanned'), value: 'clear', danger: true });
+    if (sets.some(s => !data.isDone(s)) && done.length) opts.push({ label: t('clearPlanned'), value: 'clear', danger: true });
+    if (sets.length) opts.push({ label: t('deleteWorkout'), sub: t('nSets', { n: sets.length }), value: 'delete', danger: true });
     const v = await chooser(null, opts);
-    ({ today: () => ctx.setDate(today), routine: pickRoutine, repeat, save: saveAsRoutine, finish, clear: clearPlanned })[v]?.();
+    ({ today: () => ctx.setDate(today), routine: pickRoutine, repeat, move: moveTo, copy: copyTo, save: saveAsRoutine, finish, clear: clearPlanned, delete: deleteWorkout })[v]?.();
+  };
+  const tick = async s => {
+    if (await toggleDone(s) === 'empty') { toast(t('enterValuesFirst')); focusSet(s.id); return ctx.go('/ex/' + s.exerciseId); }
+    ctx.refresh();
+  };
+  const exMenu = async (id, list) => {
+    const v = await chooser(data.exName(data.getExercise(id)), [
+      { label: t('openExercise'), value: 'open' },
+      { label: t('removeFromWorkout'), sub: t('nSets', { n: list.length }), value: 'remove', danger: true },
+    ]);
+    if (v === 'open') ctx.go('/ex/' + id);
+    if (v === 'remove') {
+      const removed = await data.removeExerciseFromDay(id, date);
+      ctx.refresh();
+      toast(t('exerciseRemoved'), { ms: 5000, action: { label: t('undo'), fn: async () => { await data.restoreSets(removed); ctx.refresh(); } } });
+    }
   };
 
   // ----- header + week strip -----
@@ -123,13 +161,14 @@ export async function render(_, ctx) {
     const cat = data.getCategory(ex.categoryId);
     const nDone = list.filter(data.isDone).length;
     return h('div', { class: 'card ex-card', style: { '--c': cat?.color || 'var(--accent)' } },
-      h('button', { class: 'ex-head', onclick: () => ctx.go('/ex/' + id) },
-        h('div', { class: 'card-title' }, data.exName(ex), h('div', { class: 'tag', style: { '--c': cat?.color } }, cat ? data.catName(cat) : '')),
-        h('span', { class: 'count' + (nDone === list.length ? ' all' : '') }, `${nDone}/${list.length}`),
-        icon('right', 20)),
+      h('div', { class: 'ex-top' },
+        h('button', { class: 'ex-head', onclick: () => ctx.go('/ex/' + id) },
+          h('div', { class: 'card-title' }, data.exName(ex), h('div', { class: 'tag', style: { '--c': cat?.color } }, cat ? data.catName(cat) : '')),
+          h('span', { class: 'count' + (nDone === list.length ? ' all' : '') }, `${nDone}/${list.length}`)),
+        h('button', { class: 'icon-btn small', 'aria-label': t('menu'), onclick: () => exMenu(id, list) }, icon('more', 20))),
       setTable({
         sets: list, prev: prev[k], prIds,
-        onTick: async s => { await toggleDone(s); ctx.refresh(); },
+        onTick: tick,
         onRow: s => { focusSet(s.id); ctx.go('/ex/' + id); },
       }),
       h('button', { class: 'add-set', onclick: async () => { await addPlannedSet(id, date, sets); ctx.refresh(); } }, icon('plus', 18), t('addSet')));
@@ -153,4 +192,21 @@ export async function render(_, ctx) {
     done.length > 0 && (summary || h('button', { class: 'btn big outline', onclick: finish }, icon('check'), t('finishWorkout'))));
 
   return h('div', { class: 'screen' }, header, week, body);
+}
+
+/** Quick date choice: today / tomorrow / yesterday, or any date. Resolves 'YYYY-MM-DD' or null. */
+async function pickDate(title, current) {
+  const today = toISODate();
+  const quick = [[today, t('today')], [addDays(today, 1), t('tomorrow')], [addDays(today, -1), t('yesterday')]].filter(([d]) => d !== current);
+  const v = await chooser(title, [...quick.map(([d, label]) => ({ label, sub: fmtLong(d), value: d })), { label: t('pickDate'), value: 'pick' }]);
+  if (v !== 'pick') return v || null;
+  return sheet(close => {
+    const input = h('input', { class: 'input', type: 'date', value: current });
+    return h('div', { class: 'form' },
+      h('h3', { class: 'sheet-title' }, title),
+      input,
+      h('div', { class: 'btn-row' },
+        h('button', { class: 'btn big', onclick: () => close(null) }, t('cancel')),
+        h('button', { class: 'btn big primary', onclick: () => close(input.value && input.value !== current ? input.value : null) }, t('ok'))));
+  }).then(v2 => v2 || null);
 }

@@ -5,6 +5,22 @@ const LOCALES = { en: 'en-US', es: 'es-419' };
 
 export const dict = {
   en: {
+    // ---- v2.3 ----
+    moveWorkoutTo: "Move workout to…",
+    copyWorkoutTo: "Copy workout to…",
+    workoutMoved: "{n} sets moved to {date}",
+    workoutMoved_one: "1 set moved to {date}",
+    workoutCopied: "{n} sets copied to {date} — tick ✓ as you do them",
+    workoutCopied_one: "1 set copied to {date}",
+    deleteWorkout: "Delete workout",
+    deleteWorkoutConfirm: "Delete the whole workout of {date} ({n} sets)?",
+    workoutDeleted: "Workout deleted",
+    repeatWorkoutSub: "Copy a past day into this one",
+    enterValuesFirst: "Enter weight and reps first",
+    openExercise: "Open exercise",
+    removeFromWorkout: "Remove from this workout",
+    exerciseRemoved: "Exercise removed",
+    pickDate: "Pick a date…",
     // ---- v2.2 ----
     renameDay: "Rename day",
     renameDayX: "Rename “{name}”",
@@ -265,6 +281,22 @@ export const dict = {
   },
 
   es: {
+    // ---- v2.3 ----
+    moveWorkoutTo: "Mover entreno a…",
+    copyWorkoutTo: "Copiar entreno a…",
+    workoutMoved: "{n} series movidas al {date}",
+    workoutMoved_one: "1 serie movida al {date}",
+    workoutCopied: "{n} series copiadas al {date}: marca ✓ al hacerlas",
+    workoutCopied_one: "1 serie copiada al {date}",
+    deleteWorkout: "Borrar entreno",
+    deleteWorkoutConfirm: "¿Borrar todo el entreno del {date} ({n} series)?",
+    workoutDeleted: "Entreno borrado",
+    repeatWorkoutSub: "Copia un día anterior a este",
+    enterValuesFirst: "Primero ingresa peso y repeticiones",
+    openExercise: "Abrir ejercicio",
+    removeFromWorkout: "Quitar de este entreno",
+    exerciseRemoved: "Ejercicio quitado",
+    pickDate: "Elegir fecha…",
     // ---- v2.2 ----
     renameDay: "Renombrar día",
     renameDayX: "Renombrar «{name}»",

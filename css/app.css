@@ -170,7 +170,8 @@ button.chip:active { background: var(--accent); color: var(--accent-ink); }
 
 /* ---------- exercise cards with set rows ---------- */
 .ex-card { padding: 0; overflow: hidden; border-left: 4px solid var(--c, var(--accent)); }
-.ex-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 13px 8px 6px 14px; text-align: left; }
+.ex-top { display: flex; align-items: center; padding-right: 6px; }
+.ex-head { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 13px 4px 6px 14px; text-align: left; }
 .ex-head .card-title { flex: 1; min-width: 0; }
 .ex-head .tag { display: flex; margin-top: 3px; }
 .ex-head .count { font-family: var(--display); font-weight: 800; font-size: 17px; color: var(--muted); }

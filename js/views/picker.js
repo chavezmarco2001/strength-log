@@ -1,6 +1,6 @@
 // Choose an exercise: recent ones, categories, search, or create a new one.
 // Also used to add exercises to a routine (ctx.state.pickFor = { routineId }).
-import { h, icon, topbar } from '../ui.js';
+import { h, icon, topbar, toast } from '../ui.js';
 import * as data from '../data.js';
 import { t } from '../i18n.js';
 import { norm } from '../util.js';
@@ -22,7 +22,12 @@ export async function render([catId], ctx) {
     } else if (pickFor?.mode === 'progress') {
       ctx.state.pickFor = null;
       ctx.go('/ex/' + exId + '/graph', { replace: true });
-    } else ctx.go('/ex/' + exId, { replace: true });
+    } else {
+      // Plan the same sets as last time (kg and reps ready, just tick them)
+      const n = await data.planFromLast(exId, ctx.state.date);
+      if (n) toast(t('setsPlanned', { n }));
+      ctx.go('/ex/' + exId, { replace: true });
+    }
   }
 
   const row = (e, showCat) => {

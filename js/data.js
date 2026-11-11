@@ -16,6 +16,7 @@ import { uid, norm, parseISODate, toISODate, wkey } from './util.js';
 import { getLang, t, fmtNum, fmtSet } from './i18n.js';
 import { checkPR } from './stats.js';
 import { toCSV } from './csv.js';
+import { TEMPLATE_RENAMES } from './templates.js';
 
 export const DEFAULTS = {
   lang: 'en', theme: 'dark', accent: 'blaze', rest: 90, step: 2.5,
@@ -37,8 +38,17 @@ export async function init() {
   for (const r of await db.getAll('settings')) settings[r.k] = r.v;
   if (!settings.seeded) await seed();
   await reload();
+  await renameTemplateDays();
   await bodyweights();
   anySets = (await db.count('sets')) > 0;
+}
+
+/** Renames days of routines added from older template versions (e.g. Spanish day names). */
+async function renameTemplateDays() {
+  const fix = routines.filter(r => r.group && TEMPLATE_RENAMES[r.group]?.[r.name]);
+  if (!fix.length) return;
+  await db.transact(['routines'], s => fix.forEach(r => s.routines.put({ ...r, name: TEMPLATE_RENAMES[r.group][r.name] })));
+  await reload();
 }
 
 async function seed() {
@@ -145,7 +155,16 @@ export async function completeSet(set, values = {}) {
   const done = { ...set, ...values };
   delete done.done;
   const pr = await prFor(done);
-  await db.put('sets', done);
+  // If you changed the planned weight/reps, the following planned sets that had the same
+  // plan take the new values too, so you only need to tick them.
+  const changed = !isDone(set) && (done.weight !== set.weight || done.reps !== set.reps);
+  const later = changed
+    ? (await setsForDate(set.date)).filter(s => s.exerciseId === set.exerciseId && !isDone(s) && s.id !== set.id && s.t > set.t && s.weight === set.weight && s.reps === set.reps)
+    : [];
+  await db.transact(['sets'], st => {
+    st.sets.put(done);
+    later.forEach(s => st.sets.put({ ...s, weight: done.weight, reps: done.reps }));
+  });
   anySets = true;
   return { set: done, pr };
 }
@@ -174,6 +193,59 @@ export async function repeatWorkout(fromDate, toDate) {
   const src = doneOnly(await setsForDate(fromDate));
   return planSets(toDate, src.map(s => ({ exerciseId: s.exerciseId, weight: s.weight, reps: s.reps })));
 }
+
+/**
+ * Plans an exercise for a day with the same sets as last time (weight and reps), so you only
+ * tick them. Does nothing if the exercise already has sets that day or was never done.
+ */
+export async function planFromLast(exerciseId, date) {
+  if ((await setsForDate(date)).some(s => s.exerciseId === exerciseId)) return 0;
+  const last = await lastSessionSets(exerciseId, date);
+  return planSets(date, last.map(s => ({ exerciseId, weight: s.weight, reps: s.reps })));
+}
+
+// ---------- whole-day actions (FitNotes-style) ----------
+/** Copies every set of a day (done or planned) to another day as planned sets. */
+export async function copyDay(fromDate, toDate) {
+  const src = await setsForDate(fromDate);
+  return planSets(toDate, src.map(s => ({ exerciseId: s.exerciseId, weight: s.weight, reps: s.reps })));
+}
+/** Moves a day's workout (sets, routine and check-in) to another day. */
+export async function moveDay(fromDate, toDate) {
+  if (fromDate === toDate) return 0;
+  const [sets, sess, target, targetSess] = await Promise.all([setsForDate(fromDate), getSession(fromDate), setsForDate(toDate), getSession(toDate)]);
+  const after = Math.max(0, ...target.map(s => s.t || 0));
+  await db.transact(['sets', 'sessions'], st => {
+    sets.forEach((s, i) => st.sets.put({ ...s, date: toDate, t: Math.max(s.t || 0, after + 1 + i) }));
+    if (sess) {
+      st.sessions.delete(fromDate);
+      st.sessions.put({ ...(targetSess || {}), ...sess, ...(targetSess?.routineId && !sess.routineId ? { routineId: targetSess.routineId } : {}), date: toDate });
+    }
+  });
+  return sets.length;
+}
+/** Deletes a day's workout. Returns a snapshot for undoDeleteDay. */
+export async function deleteDay(date) {
+  const [sets, sess] = await Promise.all([setsForDate(date), getSession(date)]);
+  await db.transact(['sets', 'sessions'], st => {
+    sets.forEach(s => st.sets.delete(s.id));
+    if (sess) st.sessions.delete(date);
+  });
+  return { sets, sess };
+}
+export async function undoDeleteDay({ sets, sess }) {
+  await db.transact(['sets', 'sessions'], st => {
+    sets.forEach(s => st.sets.put(s));
+    if (sess) st.sessions.put(sess);
+  });
+}
+/** Removes one exercise (all its sets) from a day. Returns the removed sets for undo. */
+export async function removeExerciseFromDay(exerciseId, date) {
+  const sets = (await setsForDate(date)).filter(s => s.exerciseId === exerciseId);
+  await db.transact(['sets'], st => sets.forEach(s => st.sets.delete(s.id)));
+  return sets;
+}
+export async function restoreSets(sets) { await db.transact(['sets'], st => sets.forEach(s => st.sets.put(s))); }
 
 /** Days with completed sets, newest first: [{ date, sets, exerciseIds }]. */
 export async function workoutDays(limit = Infinity) {
