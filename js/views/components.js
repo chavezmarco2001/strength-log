@@ -24,6 +24,11 @@ export function setTable({ sets, prev = [], prIds = new Set(), selectedId = null
 
 /** Big value of a set: "60 kg", or for bodyweight exercises "BW" / "BW +10". */
 function valueOf(s) {
+  if (data.isBand(s.exerciseId)) {
+    if (!s.bands?.length) return [h('small', {}, '~'), fmtNum(s.weight), h('small', {}, ' kg')];
+    return h('span', { class: 'band-dots', title: data.bandText(s.bands) },
+      data.sortBands(s.bands).map(id => h('i', { style: { '--b': data.bandById(id)?.color || '#888' } })));
+  }
   if (!data.isBW(s.exerciseId)) return [fmtNum(s.weight), h('small', {}, ' kg')];
   return [t('bwShort'), s.weight ? h('small', {}, (s.weight > 0 ? ' +' : ' −') + fmtNum(Math.abs(s.weight))) : ''];
 }

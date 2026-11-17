@@ -10,7 +10,7 @@ export async function exerciseForm(ex, defaults = {}) {
   const v = await formDialog(isNew ? t('newExercise') : t('editExercise'), [
     { name: 'name', label: t('exerciseName'), value: ex ? data.exName(ex) : defaults.name || '', required: true, maxlength: 60 },
     { name: 'categoryId', label: t('category'), type: 'select', value: ex?.categoryId || defaults.categoryId || data.categories[0]?.id, options: data.categories.map(c => ({ value: c.id, label: data.catName(c) })) },
-    { name: 'type', label: t('exerciseType'), type: 'select', value: ex && data.isBW(ex) ? 'bodyweight' : 'weight', options: [{ value: 'weight', label: t('typeWeight') }, { value: 'bodyweight', label: t('typeBodyweight') }] },
+    { name: 'type', label: t('exerciseType'), type: 'select', value: ex && data.isBW(ex) ? 'bodyweight' : ex && data.isBand(ex) ? 'bands' : 'weight', options: [{ value: 'weight', label: t('typeWeight') }, { value: 'bodyweight', label: t('typeBodyweight') }, { value: 'bands', label: t('typeBands') }] },
   ], isNew ? t('create') : t('save'));
   if (!v) return null;
   const same = data.findExerciseByName(v.name);
@@ -22,7 +22,8 @@ export async function exerciseForm(ex, defaults = {}) {
   if (!ex || v.name !== data.exName(ex)) { out.name = v.name; delete out.nameEs; }
   out.categoryId = v.categoryId;
   const saved = await data.saveExercise(out);
-  if ((v.type === 'bodyweight') !== data.isBW(saved)) await setBodyweight(saved, v.type === 'bodyweight');
+  if (v.type === 'bands' || data.isBand(saved)) { if ((v.type === 'bands') !== data.isBand(saved)) await data.setExerciseType(saved.id, v.type === 'bands' ? 'bands' : null); }
+  if ((v.type === 'bodyweight') !== data.isBW(data.getExercise(saved.id))) await setBodyweight(data.getExercise(saved.id), v.type === 'bodyweight');
   return data.getExercise(saved.id);
 }
 

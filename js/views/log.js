@@ -54,6 +54,7 @@ function trackTab(ex, all, date, ctx) {
   const next = todays.find(s => !data.isDone(s));            // next planned set to complete
   const bw = data.isBW(ex);                                    // bodyweight: weight = extra kg
   const minW = bw ? -300 : 0;
+  const band = data.isBand(ex);                               // bands: pick colours instead of kg
   const nextNo = next ? todays.indexOf(next) + 1 : 0;
 
   // Suggested values: set being edited › what you typed › next planned set › last set today › first set last time.
@@ -61,7 +62,8 @@ function trackTab(ex, all, date, ctx) {
   const wIn = h('input', { class: 'num-in', inputmode: 'decimal', autocomplete: 'off', value: String(src.weight), 'aria-label': t('weightKg'), onfocus: e => e.target.select(), oninput: saveDraft });
   const rIn = h('input', { class: 'num-in', inputmode: 'numeric', autocomplete: 'off', value: String(src.reps), 'aria-label': t('reps'), onfocus: e => e.target.select(), oninput: saveDraft });
 
-  function saveDraft() { if (!editing) drafts.set(key, { weight: wIn.value, reps: rIn.value }); }
+  let picked = new Set(src.bands || []);
+  function saveDraft() { if (!editing) drafts.set(key, { weight: wIn.value, reps: rIn.value, bands: [...picked] }); }
   function bump(input, d, isInt) {
     let v = parseNum(input.value);
     if (!Number.isFinite(v)) v = 0;
@@ -77,6 +79,13 @@ function trackTab(ex, all, date, ctx) {
       h('button', { class: 'step-btn', 'aria-label': t('increase'), onclick: () => bump(input, d, isInt) }, icon('plus', 30))));
 
   function read() {
+    if (band) {
+      const r = parseNum(rIn.value);
+      if (!picked.size) { toast(t('pickBand'), { kind: 'error' }); return null; }
+      if (!Number.isInteger(r) || r < 1 || r > 1000) { toast(t('invalidSet'), { kind: 'error' }); return null; }
+      const ids = data.sortBands([...picked]);
+      return { weight: data.bandKg(ids), reps: r, bands: ids };
+    }
     const w = wIn.value.trim() === '' ? 0 : parseNum(wIn.value);
     const r = parseNum(rIn.value);
     if (!Number.isFinite(w) || w < minW || w > 2000 || !Number.isInteger(r) || r < 1 || r > 1000) {
@@ -111,10 +120,24 @@ function trackTab(ex, all, date, ctx) {
   async function copyLast() {
     const ref = todays.at(-1);
     if (!ref) return;
-    const res = await data.addSet({ exerciseId: ex.id, date, weight: ref.weight, reps: ref.reps });
+    const res = await data.addSet({ exerciseId: ex.id, date, weight: ref.weight, reps: ref.reps, bands: ref.bands });
     afterComplete(res.set, res.pr);
     ctx.refresh();
   }
+
+  // Band picker: tap colours to combine bands; shows the estimated total.
+  const bandPicker = h('div', { class: 'field-block' });
+  function drawBands() {
+    const ids = data.sortBands([...picked]);
+    bandPicker.replaceChildren(
+      h('div', { class: 'field-label' }, t('bandsLabel')),
+      h('div', { class: 'band-grid' }, data.bandList().map(b => h('button', {
+        class: 'band-btn' + (picked.has(b.id) ? ' on' : ''), style: { '--b': b.color }, 'aria-pressed': String(picked.has(b.id)),
+        onclick: () => { picked.has(b.id) ? picked.delete(b.id) : picked.add(b.id); drawBands(); saveDraft(); },
+      }, h('i', {}), t('band_' + b.id)))),
+      h('div', { class: 'muted small band-total' }, ids.length ? `${data.bandText(ids)} ≈ ${fmtNum(data.bandKg(ids))} kg` : t('pickBand')));
+  }
+  if (band) drawBands();
 
   const note = h('button', { class: 'ex-note', onclick: () => editNote(ex, ctx) }, icon('note', 18),
     ex.note ? h('b', {}, ex.note) : h('span', {}, t('addNote')));
@@ -122,7 +145,7 @@ function trackTab(ex, all, date, ctx) {
   const lastEl = last.length
     ? h('div', { class: 'last' },
       h('div', { class: 'muted small' }, t('lastTime', { date: fmtShortY(lastDate) })),
-      h('div', { class: 'chips' }, last.map(s => h('button', { class: 'chip', onclick: () => { wIn.value = s.weight; rIn.value = s.reps; saveDraft(); } }, data.setLabel(s)))))
+      h('div', { class: 'chips' }, last.map(s => h('button', { class: 'chip', onclick: () => { wIn.value = s.weight; rIn.value = s.reps; if (band) { picked = new Set(s.bands || []); drawBands(); } saveDraft(); } }, data.setLabel(s)))))
     : !done.length && h('div', { class: 'last muted small' }, t('firstTime'));
 
   const actions = editSet
@@ -133,7 +156,7 @@ function trackTab(ex, all, date, ctx) {
     : h('button', { class: 'btn primary big save-btn', onclick: save }, icon('check', 26), next ? t('completeSetN', { n: nextNo }) : t('saveSet'));
 
   const tools = h('div', { class: 'tools' },
-    !bw && h('button', { class: 'btn small', onclick: () => plateSheet(parseNum(wIn.value)) }, icon('plates', 18), t('plates')),
+    !bw && !band && h('button', { class: 'btn small', onclick: () => plateSheet(parseNum(wIn.value)) }, icon('plates', 18), t('plates')),
     h('button', { class: 'btn small', onclick: () => timer.startRest(restFor(ex)) }, icon('play', 16), t('restNow', { v: fmtRest(restFor(ex)) })),
     todays.length > 0 && !editSet && h('button', { class: 'btn small', onclick: copyLast }, icon('copy', 18), t('repeatLast')));
 
@@ -141,7 +164,7 @@ function trackTab(ex, all, date, ctx) {
   return h('div', { class: 'content track' },
     note,
     lastEl,
-    stepper(wIn, Number(data.settings.step) || 2.5, false, bw ? t('extraKg') : t('weightKg')),
+    band ? bandPicker : stepper(wIn, Number(data.settings.step) || 2.5, false, bw ? t('extraKg') : t('weightKg')),
     bw && h('p', { class: 'muted small', style: { margin: '-6px 2px 0' } }, data.bodyweightAt(date) != null ? t('bwNote', { kg: fmtNum(data.bodyweightAt(date)) }) : t('bwNoWeight')),
     stepper(rIn, 1, true, t('reps')),
     actions,

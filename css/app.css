@@ -424,3 +424,12 @@ body.no-nav .timer { bottom: 0; height: calc(var(--timer-h) + var(--safe)); padd
 .reorder-row .card-title { font-size: 16px; }
 .reorder-row.dragging { transition: none; z-index: 2; position: relative; box-shadow: 0 10px 30px rgba(0,0,0,.5), 0 0 0 2px var(--accent); background: var(--surface2); }
 .grip { width: 44px; height: 48px; display: grid; place-items: center; color: var(--muted); touch-action: none; cursor: grab; }
+
+/* resistance bands */
+.band-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
+.band-btn { display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 0 12px; border-radius: 14px; background: var(--surface2); font-weight: 700; box-shadow: inset 0 0 0 2px transparent; }
+.band-btn i { width: 18px; height: 18px; border-radius: 50%; background: var(--b); box-shadow: 0 0 0 2px rgba(255,255,255,.25); flex: none; }
+.band-btn.on { box-shadow: inset 0 0 0 2.5px var(--text); background: color-mix(in srgb, var(--b) 30%, var(--surface2)); }
+.band-total { margin-top: 8px; }
+.band-dots { display: inline-flex; gap: 4px; vertical-align: middle; }
+.band-dots i { width: 18px; height: 18px; border-radius: 50%; background: var(--b); box-shadow: 0 0 0 2px rgba(255,255,255,.3); }

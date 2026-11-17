@@ -31,5 +31,5 @@ export async function addPlannedSet(exerciseId, date, daySets) {
   const own = daySets.filter(s => s.exerciseId === exerciseId);
   let ref = own.at(-1);
   if (!ref) ref = (await data.lastSessionSets(exerciseId, date))[0];
-  await data.planSets(date, [{ exerciseId, weight: ref?.weight ?? 0, reps: ref?.reps ?? 0 }]);
+  await data.planSets(date, [{ exerciseId, weight: ref?.weight ?? 0, reps: ref?.reps ?? 0, bands: ref?.bands }]);
 }

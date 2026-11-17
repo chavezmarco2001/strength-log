@@ -1,5 +1,5 @@
 // "More" tab: backup & import, progress pages, settings. Plus the import report.
-import { h, icon, topbar, seg, toggleRow, chooser, confirmDialog, toast, applyTheme, applyAccent, ACCENTS, sheet } from '../ui.js';
+import { h, icon, topbar, seg, toggleRow, miniStepper, chooser, confirmDialog, toast, applyTheme, applyAccent, ACCENTS, sheet } from '../ui.js';
 import * as data from '../data.js';
 import { t, setLang, fmtLong, fmtRest, fmtAgo, fmtNum } from '../i18n.js';
 import { toISODate, norm, REST_OPTIONS, STEP_OPTIONS } from '../util.js';
@@ -8,7 +8,7 @@ import { isSQLite } from '../sqlite.js';
 import { saveFile, canShareFiles } from '../files.js';
 import { testAlarm } from '../timer.js';
 
-export const APP_VERSION = '2.4.0';
+export const APP_VERSION = '2.5.0';
 const ALL_PLATES = [25, 20, 15, 10, 5, 2.5, 2, 1.25, 1, 0.5];
 
 export async function render(_, ctx) {
@@ -67,6 +67,12 @@ export async function render(_, ctx) {
         toggleRow(t('vibration'), s.vibrate, v => set('vibrate', v)),
         h('button', { class: 'row', onclick: testAlarm }, h('span', { class: 'row-main' }, t('testAlarm'))),
         toggleRow(t('keepAwake'), s.wake, v => set('wake', v), t('keepAwakeSub'))),
+      h('h3', { class: 'section' }, t('bandsSection')),
+      h('div', { class: 'card stack' },
+        h('p', { class: 'muted small', style: { margin: 0 } }, t('bandsExplain')),
+        data.bandList().map(b => h('div', { class: 'rec-row', style: { alignItems: 'center' } },
+          h('span', {}, h('span', { class: 'band-dots' }, h('i', { style: { '--b': b.color } })), ' ', t('band_' + b.id)),
+          miniStepper(b.kg, { min: 0.5, max: 150, unit: 'kg', label: t('band_' + b.id), onchange: async v => { await data.setSetting('bands', data.bandList().map(x => (x.id === b.id ? { ...x, kg: v } : x))); await data.recalcBandWeights(); ctx.refresh(); } })))),
       h('div', { class: 'card stack' },
         h('div', { class: 'field-label' }, t('weightStep')),
         seg(STEP_OPTIONS.map(v => [v, fmtNum(v) + ' kg']), s.step, v => set('step', v)),

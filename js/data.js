@@ -18,7 +18,17 @@ import { checkPR, CHECKIN_KEYS } from './stats.js';
 import { toCSV } from './csv.js';
 import { TEMPLATE_RENAMES } from './templates.js';
 
+// Resistance bands, hardest first. kg = rough midpoint of typical ranges (Ryher-style loop bands);
+// editable in More → Bands. A band set stores bands: [ids] and weight = their sum (estimate).
+export const DEFAULT_BANDS = [
+  { id: 'green', color: '#2ea043', kg: 40 },
+  { id: 'purple', color: '#8957e5', kg: 27 },
+  { id: 'black', color: '#2b2b2b', kg: 18 },
+  { id: 'red', color: '#e5383b', kg: 10 },
+  { id: 'yellow', color: '#f2c618', kg: 4.5 },
+];
 export const DEFAULTS = {
+  bands: DEFAULT_BANDS,
   lang: 'en', theme: 'dark', accent: 'blaze', rest: 90, step: 2.5,
   sound: true, vibrate: true, wake: true, timerOnComplete: true,
   barWeight: 20, plates: [25, 20, 15, 10, 5, 2.5, 1.25],
@@ -40,8 +50,16 @@ export async function init() {
   await reload();
   await renameTemplateDays();
   await migrateCheckinScale();
+  await markBandExercises();
   await bodyweights();
   anySets = (await db.count('sets')) > 0;
+}
+
+/** v2.5: exercises with "Band" in the name are band exercises (once; you can change it later). */
+async function markBandExercises() {
+  if (settings.bandsMarked) return;
+  for (const e of exercises.filter(x => !x.type && /\bbands?\b/i.test(x.name))) await setExerciseType(e.id, 'bands');
+  await setSetting('bandsMarked', true);
 }
 
 /** Check-ins used a 1–5 scale before v2.4; they are now 1–10. Old answers are doubled once. */
@@ -156,8 +174,8 @@ async function prFor(set) {
 }
 
 /** Saves a new completed set and tells whether it is a personal record ('weight' | 'reps' | null). */
-export async function addSet({ exerciseId, date, weight, reps }) {
-  const set = { id: uid(), exerciseId, date, weight, reps, t: Date.now() };
+export async function addSet({ exerciseId, date, weight, reps, bands }) {
+  const set = { id: uid(), exerciseId, date, weight, reps, t: Date.now(), ...(bands?.length ? { bands: sortBands(bands) } : {}) };
   const pr = await prFor(set);
   await db.put('sets', set);
   anySets = true;
@@ -172,11 +190,11 @@ export async function completeSet(set, values = {}) {
   // plan take the new values too, so you only need to tick them.
   const changed = !isDone(set) && (done.weight !== set.weight || done.reps !== set.reps);
   const later = changed
-    ? (await setsForDate(set.date)).filter(s => s.exerciseId === set.exerciseId && !isDone(s) && s.id !== set.id && s.t > set.t && s.weight === set.weight && s.reps === set.reps)
+    ? (await setsForDate(set.date)).filter(s => s.exerciseId === set.exerciseId && !isDone(s) && s.id !== set.id && s.t > set.t && s.weight === set.weight && s.reps === set.reps && bandKey(s) === bandKey(set))
     : [];
   await db.transact(['sets'], st => {
     st.sets.put(done);
-    later.forEach(s => st.sets.put({ ...s, weight: done.weight, reps: done.reps }));
+    later.forEach(s => st.sets.put({ ...s, weight: done.weight, reps: done.reps, ...(done.bands ? { bands: [...done.bands] } : {}) }));
   });
   anySets = true;
   return { set: done, pr };
@@ -188,7 +206,7 @@ export const deleteSet = id => db.del('sets', id);
 /** Adds planned (not yet done) sets at the end of `date`, in the given order. */
 export async function planSets(date, entries) {
   const t0 = Date.now();
-  const sets = entries.map((e, i) => ({ id: uid(), exerciseId: e.exerciseId, date, weight: e.weight ?? 0, reps: e.reps ?? 0, t: t0 + i, done: false }));
+  const sets = entries.map((e, i) => ({ id: uid(), exerciseId: e.exerciseId, date, weight: e.weight ?? 0, reps: e.reps ?? 0, t: t0 + i, done: false, ...(e.bands?.length ? { bands: [...e.bands] } : {}) }));
   if (sets.length) await db.transact(['sets'], s => sets.forEach(x => s.sets.put(x)));
   return sets.length;
 }
@@ -204,7 +222,7 @@ export async function lastSessionSets(exerciseId, beforeDate) {
 /** Copies the completed sets of `fromDate` into `toDate` as planned sets. Returns how many. */
 export async function repeatWorkout(fromDate, toDate) {
   const src = doneOnly(await setsForDate(fromDate));
-  return planSets(toDate, src.map(s => ({ exerciseId: s.exerciseId, weight: s.weight, reps: s.reps })));
+  return planSets(toDate, src.map(s => ({ exerciseId: s.exerciseId, weight: s.weight, reps: s.reps, bands: s.bands })));
 }
 
 /**
@@ -214,14 +232,14 @@ export async function repeatWorkout(fromDate, toDate) {
 export async function planFromLast(exerciseId, date) {
   if ((await setsForDate(date)).some(s => s.exerciseId === exerciseId)) return 0;
   const last = await lastSessionSets(exerciseId, date);
-  return planSets(date, last.map(s => ({ exerciseId, weight: s.weight, reps: s.reps })));
+  return planSets(date, last.map(s => ({ exerciseId, weight: s.weight, reps: s.reps, bands: s.bands })));
 }
 
 // ---------- whole-day actions (FitNotes-style) ----------
 /** Copies every set of a day (done or planned) to another day as planned sets. */
 export async function copyDay(fromDate, toDate) {
   const src = await setsForDate(fromDate);
-  return planSets(toDate, src.map(s => ({ exerciseId: s.exerciseId, weight: s.weight, reps: s.reps })));
+  return planSets(toDate, src.map(s => ({ exerciseId: s.exerciseId, weight: s.weight, reps: s.reps, bands: s.bands })));
 }
 /** Moves a day's workout (sets, routine and check-in) to another day. */
 export async function moveDay(fromDate, toDate) {
@@ -302,10 +320,33 @@ export function bodyweightAt(date) {
 // exercise.type === 'bodyweight' → a set's `weight` is EXTRA weight (0 = body weight only,
 // +10 = vest, −20 = assisted). Records compare reps at the same extra weight; volume uses
 // body weight + extra.
+// ---------- band exercises ----------
+export const isBand = exOrId => (typeof exOrId === 'string' ? exMap.get(exOrId) : exOrId)?.type === 'bands';
+export const bandList = () => (Array.isArray(settings.bands) && settings.bands.length ? settings.bands : DEFAULT_BANDS);
+export const bandById = id => bandList().find(b => b.id === id);
+export const bandKg = ids => Math.round((ids || []).reduce((a, id) => a + (bandById(id)?.kg || 0), 0) * 100) / 100;
+const bandKey = s => (s.bands || []).join('+');
+/** Bands in hardest-first order, as labels: "Green + Black". */
+export const bandText = ids => sortBands(ids).map(id => t('band_' + id)).join(' + ');
+export const sortBands = ids => bandList().map(b => b.id).filter(id => (ids || []).includes(id));
+/** After editing band kg: recompute the estimated weight of every set logged with bands. */
+export async function recalcBandWeights() {
+  const sets = (await db.getAll('sets')).filter(x => x.bands?.length);
+  await db.transact(['sets'], st => sets.forEach(x => st.sets.put({ ...x, weight: bandKg(x.bands) })));
+}
+export async function setExerciseType(id, type) {
+  const ex = exMap.get(id);
+  if (!ex) return;
+  const out = { ...ex };
+  if (type) out.type = type; else delete out.type;
+  await saveExercise(out);
+}
+
 export const isBW = exOrId => (typeof exOrId === 'string' ? exMap.get(exOrId) : exOrId)?.type === 'bodyweight';
 export const effWeight = s => (isBW(s.exerciseId) ? (bodyweightAt(s.date) ?? 0) + s.weight : s.weight);
 export const setVolume = s => effWeight(s) * s.reps;
 export function setLabel(s) {
+  if (isBand(s.exerciseId)) return `${s.bands?.length ? bandText(s.bands) : '~' + fmtNum(s.weight) + ' kg'} × ${s.reps}`;
   if (!isBW(s.exerciseId)) return fmtSet(s);
   const w = s.weight;
   return `${t('bwShort')}${w ? (w > 0 ? ' +' : ' −') + fmtNum(Math.abs(w)) : ''} × ${s.reps}`;
@@ -375,7 +416,7 @@ export async function startRoutine(id, date = toISODate()) {
     const last = await lastSessionSets(item.id, date);
     for (let i = 0; i < item.sets; i++) {
       const ref = last[Math.min(i, last.length - 1)];
-      entries.push({ exerciseId: item.id, weight: ref?.weight ?? 0, reps: item.reps || ref?.reps || 0 });
+      entries.push({ exerciseId: item.id, weight: ref?.weight ?? 0, reps: item.reps || ref?.reps || 0, bands: ref?.bands });
     }
   }
   return planSets(date, entries);

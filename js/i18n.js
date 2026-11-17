@@ -5,6 +5,17 @@ const LOCALES = { en: 'en-US', es: 'es-419' };
 
 export const dict = {
   en: {
+    // ---- v2.5 bands ----
+    band_green: "Green",
+    band_purple: "Purple",
+    band_black: "Black",
+    band_red: "Red",
+    band_yellow: "Yellow",
+    bandsLabel: "Bands (tap to combine)",
+    pickBand: "Pick at least one band",
+    typeBands: "Resistance bands",
+    bandsSection: "Resistance bands",
+    bandsExplain: "Approximate resistance of each band, used for charts and records. Typical ranges: green 23–57 kg, purple 16–38, black 9–27, red 4.5–16, yellow 2–7. Adjust to your bands.",
     // ---- v2.4 ----
     q_tags: "How did it go?",
     tagsHint: "Tap all that apply — no typing needed.",
@@ -304,6 +315,17 @@ export const dict = {
   },
 
   es: {
+    // ---- v2.5 bands ----
+    band_green: "Verde",
+    band_purple: "Morada",
+    band_black: "Negra",
+    band_red: "Roja",
+    band_yellow: "Amarilla",
+    bandsLabel: "Bandas (toca para combinar)",
+    pickBand: "Elige al menos una banda",
+    typeBands: "Bandas elásticas",
+    bandsSection: "Bandas elásticas",
+    bandsExplain: "Resistencia aproximada de cada banda, usada en gráficos y récords. Rangos típicos: verde 23–57 kg, morada 16–38, negra 9–27, roja 4,5–16, amarilla 2–7. Ajústalas a tus bandas.",
     // ---- v2.4 ----
     q_tags: "¿Cómo te fue?",
     tagsHint: "Toca todas las que apliquen, sin escribir.",
